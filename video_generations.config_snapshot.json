@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veofruit.local/schemas/config-snapshot.schema.json",
+  "title": "ConfigSnapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "snapshot_type",
+    "captured_at",
+    "project_id",
+    "generation_no",
+    "ai_model",
+    "output",
+    "subject_settings",
+    "script_optimization",
+    "voice_settings",
+    "effects_visuals"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "snapshot_type": {
+      "type": "string",
+      "const": "generation_config"
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "project_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "generation_no": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "ai_model": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resolution", "aspect_ratio", "duration_seconds"],
+      "properties": {
+        "resolution": {
+          "type": "string",
+          "enum": ["720p", "1080p"]
+        },
+        "aspect_ratio": {
+          "type": "string",
+          "enum": ["9:16", "16:9"]
+        },
+        "duration_seconds": {
+          "type": "integer",
+          "enum": [15, 30, 60]
+        }
+      }
+    },
+    "subject_settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "character_consistency",
+        "motion_intensity",
+        "emotion_style"
+      ],
+      "properties": {
+        "character_consistency": {
+          "type": "boolean"
+        },
+        "motion_intensity": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "emotion_style": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50
+        }
+      }
+    },
+    "script_optimization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["auto_enhance_script", "tone"],
+      "properties": {
+        "auto_enhance_script": {
+          "type": "boolean"
+        },
+        "tone": {
+          "type": "string",
+          "enum": ["Emotional", "Sales", "Viral", "Educational"]
+        }
+      }
+    },
+    "voice_settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gender", "language", "speed", "emotion"],
+      "properties": {
+        "gender": {
+          "type": "string",
+          "enum": ["Male", "Female", "AI Neutral"]
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50
+        },
+        "speed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "emotion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50
+        }
+      }
+    },
+    "effects_visuals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["style", "transition_effects", "background_music"],
+      "properties": {
+        "style": {
+          "type": "string",
+          "enum": [
+            "Cinematic",
+            "Anime",
+            "Digital Art",
+            "Realistic",
+            "Fantasy",
+            "Dreamy"
+          ]
+        },
+        "transition_effects": {
+          "type": "boolean"
+        },
+        "background_music": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

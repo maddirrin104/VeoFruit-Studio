@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://veofruit.local/schemas/latest-config.schema.json",
+  "title": "LatestConfig",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "ai_model": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "default": "Veo 3.1 Fast"
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "resolution": {
+          "type": "string",
+          "enum": ["720p", "1080p"]
+        },
+        "aspect_ratio": {
+          "type": "string",
+          "enum": ["9:16", "16:9"]
+        },
+        "duration_seconds": {
+          "type": "integer",
+          "enum": [15, 30, 60]
+        }
+      }
+    },
+    "subject_settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "character_consistency": {
+          "type": "boolean",
+          "default": false
+        },
+        "motion_intensity": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 50
+        },
+        "emotion_style": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50
+        }
+      }
+    },
+    "script_optimization": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "auto_enhance_script": {
+          "type": "boolean",
+          "default": false
+        },
+        "tone": {
+          "type": "string",
+          "enum": ["Emotional", "Sales", "Viral", "Educational"]
+        }
+      }
+    },
+    "voice_settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gender": {
+          "type": "string",
+          "enum": ["Male", "Female", "AI Neutral"]
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50
+        },
+        "speed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 50
+        },
+        "emotion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50
+        }
+      }
+    },
+    "effects_visuals": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "style": {
+          "type": "string",
+          "enum": [
+            "Cinematic",
+            "Anime",
+            "Digital Art",
+            "Realistic",
+            "Fantasy",
+            "Dreamy"
+          ]
+        },
+        "transition_effects": {
+          "type": "boolean",
+          "default": false
+        },
+        "background_music": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    }
+  }
+}
