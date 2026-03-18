@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import {
   Mic,
   Palette,
@@ -9,11 +12,6 @@ import { OptionButton } from "@/components/ui/OptionButton";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { ToggleSwitch } from "@/components/ui/ToggleSwitch";
 import { RangeField, SelectField } from "@/components/ui/FormControls";
-import {
-  styleOptions,
-  toneOptions,
-  voiceGenderOptions,
-} from "@/lib/studio-data";
 
 function InnerPanel({
   title,
@@ -36,6 +34,24 @@ function InnerPanel({
 }
 
 export function AiOptimizationSection() {
+  const [characterConsistency, setCharacterConsistency] = useState(true);
+  const [autoEnhanceScript, setAutoEnhanceScript] = useState(false);
+  const [voiceGender, setVoiceGender] = useState("Female");
+  const [selectedTone, setSelectedTone] = useState<string | null>(null);
+  const [selectedStyle, setSelectedStyle] = useState("Dreamy");
+  const [transitionEffects, setTransitionEffects] = useState(true);
+  const [backgroundMusic, setBackgroundMusic] = useState(true);
+
+  const toneOptions = ["Emotional", "Sales", "Viral", "Educational"];
+  const styleOptions = [
+    "Cinematic",
+    "Anime",
+    "Digital Art",
+    "Realistic",
+    "Fantasy",
+    "Dreamy",
+  ];
+
   return (
     <Card className="p-6 md:p-7">
       <SectionHeading
@@ -53,7 +69,10 @@ export function AiOptimizationSection() {
               <span className="text-sm text-slate-300">
                 Character consistency
               </span>
-              <ToggleSwitch checked />
+              <ToggleSwitch
+                checked={characterConsistency}
+                onClick={() => setCharacterConsistency((prev) => !prev)}
+              />
             </div>
 
             <div className="space-y-2">
@@ -78,7 +97,10 @@ export function AiOptimizationSection() {
           <div className="space-y-5">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-slate-300">Auto-enhance script</span>
-              <ToggleSwitch checked={false} />
+              <ToggleSwitch
+                checked={autoEnhanceScript}
+                onClick={() => setAutoEnhanceScript((prev) => !prev)}
+              />
             </div>
 
             <div className="space-y-3">
@@ -86,10 +108,11 @@ export function AiOptimizationSection() {
               <div className="grid grid-cols-2 gap-3">
                 {toneOptions.map((item) => (
                   <OptionButton
-                    key={item.label}
-                    label={item.label}
-                    active={item.active}
+                    key={item}
+                    label={item}
+                    active={selectedTone === item}
                     compact
+                    onClick={() => setSelectedTone(item)}
                   />
                 ))}
               </div>
@@ -102,12 +125,13 @@ export function AiOptimizationSection() {
             <div className="space-y-3">
               <p className="text-sm text-slate-300">Voice gender</p>
               <div className="grid grid-cols-3 gap-2">
-                {voiceGenderOptions.map((item) => (
+                {["Male", "Female", "AI Neutral"].map((item) => (
                   <OptionButton
-                    key={item.label}
-                    label={item.label}
-                    active={item.active}
+                    key={item}
+                    label={item}
+                    active={voiceGender === item}
                     compact
+                    onClick={() => setVoiceGender(item)}
                   />
                 ))}
               </div>
@@ -146,10 +170,11 @@ export function AiOptimizationSection() {
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
                 {styleOptions.map((item) => (
                   <OptionButton
-                    key={item.label}
-                    label={item.label}
-                    active={item.active}
+                    key={item}
+                    label={item}
+                    active={selectedStyle === item}
                     compact
+                    onClick={() => setSelectedStyle(item)}
                   />
                 ))}
               </div>
@@ -157,12 +182,18 @@ export function AiOptimizationSection() {
 
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-slate-300">Transition effects</span>
-              <ToggleSwitch checked />
+              <ToggleSwitch
+                checked={transitionEffects}
+                onClick={() => setTransitionEffects((prev) => !prev)}
+              />
             </div>
 
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-slate-300">Background music</span>
-              <ToggleSwitch checked />
+              <ToggleSwitch
+                checked={backgroundMusic}
+                onClick={() => setBackgroundMusic((prev) => !prev)}
+              />
             </div>
           </div>
         </InnerPanel>

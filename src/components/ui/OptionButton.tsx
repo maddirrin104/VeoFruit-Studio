@@ -4,6 +4,7 @@ type OptionButtonProps = {
   active?: boolean;
   compact?: boolean;
   className?: string;
+  onClick?: () => void;
 };
 
 export function OptionButton({
@@ -12,10 +13,12 @@ export function OptionButton({
   active = false,
   compact = false,
   className = "",
+  onClick,
 }: OptionButtonProps) {
   return (
     <button
       type="button"
+      onClick={onClick}
       className={`flex w-full flex-col items-center justify-center rounded-2xl border text-center transition-all
       ${compact ? "min-h-[46px] px-3 py-3 text-sm" : "min-h-[64px] px-4 py-4"}
       ${
