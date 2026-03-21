@@ -7,73 +7,91 @@ import {
   TextInput,
 } from "@/components/ui/FormControls";
 
+const topicTypes = [
+  "Giới thiệu",
+  "Hướng dẫn",
+  "So sánh",
+  "Lợi ích sức khỏe",
+  "Viral",
+  "Review",
+  "Giáo dục",
+  "Kể chuyện",
+  "Hài hước",
+];
+
+function FieldLabel({ children }: { children: string }) {
+  return (
+    <label className="relative block pl-2 text-[13px] font-semibold uppercase tracking-wide text-[#2f7056] before:absolute before:left-0 before:top-1 before:h-4 before:w-0.75 before:rounded-full before:bg-[#10b862]">
+      {children}
+    </label>
+  );
+}
+
 export function ContentEditorSection() {
   return (
     <Card className="p-6 md:p-7">
       <SectionHeading title="Nội dung" icon={<Sparkles className="size-5" />} />
 
-      <div className="space-y-6">
+      <div className="space-y-5">
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-slate-200">
-            Story Topic
-          </label>
-          <TextInput placeholder="Enter your story topic..." />
+          <FieldLabel>Chủ đề trái cây</FieldLabel>
+          <TextInput placeholder="VD: Quả dâu tây tươi ngon, mọng nước..." />
         </div>
 
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-slate-200">
-            Main Character Description
-          </label>
-          <TextInput placeholder="Describe your main character..." />
-          <p className="text-xs text-slate-500">
-            Character should remain consistent across scenes
-          </p>
+          <FieldLabel>Mô tả nhân vật chính</FieldLabel>
+          <TextInput placeholder="VD: Chú gấu trúc đội mũ rơm đang cầm trái cây..." />
         </div>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-3">
-            <label className="block text-sm font-medium text-slate-200">
-              Script Input
-            </label>
+            <FieldLabel>Kịch bản chi tiết</FieldLabel>
 
             <button
               type="button"
-              className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-slate-300 transition hover:border-white/20"
+              className="rounded-full bg-[#0eb35f] px-4 py-2 text-xs font-semibold text-white shadow-[0_8px_20px_rgba(14,179,95,0.3)] transition hover:bg-[#0ba455]"
             >
-              Auto-generate
+              AI tạo kịch bản
             </button>
           </div>
 
-          <TextArea
-            rows={5}
-            placeholder="Write your script here..."
-          />
+          <TextArea rows={5} placeholder="Mô tả từng cảnh quay về trái cây..." />
+        </div>
+
+        <div className="space-y-2">
+          <FieldLabel>Tông nội dung</FieldLabel>
+          <div className="flex flex-wrap gap-2">
+            {topicTypes.map((item) => (
+              <button
+                key={item}
+                type="button"
+                className="rounded-full border border-[#c9e5d5] bg-[#f0f7f3] px-4 py-2 text-sm text-[#3f6f5a] transition hover:border-[#9fdab9]"
+              >
+                {item}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-slate-200">
-              Video Genre
-            </label>
+            <FieldLabel>Thể loại</FieldLabel>
             <SelectField
-              defaultValue="Select genre..."
+              defaultValue="Giới thiệu trái cây"
               options={[
-                "Select genre...",
-                "Fruit promotion",
-                "Brand story",
-                "Seasonal campaign",
-                "Lifestyle commercial",
+                "Giới thiệu trái cây",
+                "Kể chuyện thương hiệu",
+                "Quảng cáo theo mùa",
+                "Review sản phẩm",
               ]}
             />
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-slate-200">
-              Number of Scenes
-            </label>
+            <FieldLabel>Số cảnh</FieldLabel>
             <SelectField
-              defaultValue="3 scenes"
-              options={["3 scenes", "4 scenes", "5 scenes", "6 scenes"]}
+              defaultValue="3 cảnh"
+              options={["3 cảnh", "4 cảnh", "5 cảnh", "6 cảnh"]}
             />
           </div>
         </div>

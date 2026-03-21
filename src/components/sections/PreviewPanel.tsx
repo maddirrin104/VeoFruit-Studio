@@ -1,81 +1,72 @@
 import {
-  Download,
-  Eye,
+  Monitor,
   Play,
-  RefreshCw,
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
-import { sceneTimeline } from "@/lib/studio-data";
 
 export function PreviewPanel() {
   return (
-    <div className="xl:sticky xl:top-6">
-      <Card className="p-6">
-        <div className="mb-5 flex items-center gap-2">
-          <h2 className="text-[22px] font-semibold tracking-tight text-white">
+    <div className="space-y-3 xl:sticky xl:top-5 xl:self-start">
+      <Card className="p-4">
+        <div className="mb-4 flex items-center gap-2">
+          <Monitor className="size-4 text-[#10b862]" />
+          <h2 className="text-base font-semibold uppercase tracking-wide text-[#0fa45a]">
             Xem trước video
           </h2>
-          <Eye className="size-5 text-fuchsia-400" />
         </div>
 
-        <div className="flex aspect-[9/16] w-full items-center justify-center rounded-[24px] border border-fuchsia-500/20 bg-[linear-gradient(180deg,rgba(126,34,206,0.18),rgba(236,72,153,0.08))]">
+        <div className="relative flex aspect-9/16 w-full items-center justify-center rounded-xl border border-[#a7dfbe] bg-[linear-gradient(180deg,#d9f6e5_0%,#b9ebcf_100%)]">
+          <span className="absolute right-3 top-3 rounded-full bg-[#effcf3] px-3 py-1 text-[11px] font-semibold text-[#10a95d] shadow-[0_6px_12px_rgba(23,96,60,0.14)]">
+            720p HD
+          </span>
+
           <div className="text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-fuchsia-500/50 bg-fuchsia-500/10 text-fuchsia-300">
+            <div className="pulse-soft mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#05b25e] text-white shadow-[0_10px_22px_rgba(5,178,94,0.42)]">
               <Play className="ml-1 size-8" />
             </div>
-            <p className="mt-5 text-slate-400">No preview yet</p>
-          </div>
-        </div>
-
-        <div className="mt-6">
-          <p className="mb-3 text-sm text-slate-400">Scene Timeline</p>
-
-          <div className="grid grid-cols-4 gap-3">
-            {sceneTimeline.map((scene) => (
-              <button
-                key={scene.label}
-                type="button"
-                className={`flex h-12 items-center justify-center rounded-xl border text-lg transition ${
-                  scene.active
-                    ? "border-fuchsia-500/60 bg-fuchsia-500/15"
-                    : "border-white/10 bg-white/[0.03]"
-                }`}
-                title={scene.label}
-              >
-                {scene.icon}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-5 space-y-3">
-          <button
-            type="button"
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-500 to-pink-500 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(168,85,247,0.35)] transition hover:opacity-95"
-          >
-            <Play className="size-4" />
-            Generate Preview
-          </button>
-
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              type="button"
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] text-sm font-medium text-slate-200 transition hover:border-white/20"
-            >
-              <RefreshCw className="size-4" />
-              Regenerate Scene
-            </button>
-
-            <button
-              type="button"
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] text-sm font-medium text-slate-200 transition hover:border-white/20"
-            >
-              <Download className="size-4" />
-              Download
-            </button>
+            <p className="mt-4 text-sm text-[#39715a]">Chưa có preview</p>
           </div>
         </div>
       </Card>
+
+      <Card className="p-4">
+        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#5f8f79]">
+          Cấu hình hiện tại
+        </p>
+
+        <div className="space-y-3 text-sm">
+          <div className="flex items-center justify-between border-b border-[#d2ebdd] pb-2">
+            <span className="text-[#5f8f79]">Model</span>
+            <span className="font-semibold text-[#0ea75a]">Veo 3.1 Fast</span>
+          </div>
+          <div className="flex items-center justify-between border-b border-[#d2ebdd] pb-2">
+            <span className="text-[#5f8f79]">Resolution</span>
+            <span className="font-semibold text-[#0ea75a]">720p</span>
+          </div>
+          <div className="flex items-center justify-between border-b border-[#d2ebdd] pb-2">
+            <span className="text-[#5f8f79]">Ratio</span>
+            <span className="font-semibold text-[#0ea75a]">9:16</span>
+          </div>
+          <div className="flex items-center justify-between border-b border-[#d2ebdd] pb-2">
+            <span className="text-[#5f8f79]">Duration</span>
+            <span className="font-semibold text-[#0ea75a]">15s</span>
+          </div>
+          <div className="flex items-center justify-between border-b border-[#d2ebdd] pb-2">
+            <span className="text-[#5f8f79]">Voice</span>
+            <span className="font-semibold text-[#0ea75a]">Nam</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[#5f8f79]">Style</span>
+            <span className="font-semibold text-[#0ea75a]">Cinematic</span>
+          </div>
+        </div>
+      </Card>
+
+      <div className="flex justify-center">
+        <span className="rounded-full border border-[#c6e2d3] bg-[#ecf8f1] px-4 py-1 text-xs font-medium text-[#698f7d]">
+          5-16 giây
+        </span>
+      </div>
     </div>
   );
 }
