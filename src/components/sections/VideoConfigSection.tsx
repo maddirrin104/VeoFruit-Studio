@@ -1,11 +1,20 @@
 "use client";
 
-import { useState } from "react";
 import { Settings2 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { OptionButton } from "@/components/ui/OptionButton";
 import { SelectField } from "@/components/ui/FormControls";
 import { SectionHeading } from "@/components/ui/SectionHeading";
+
+type VideoConfigSectionProps = {
+  resolution: "720p" | "1080p";
+  aiModel: string;
+  aspectRatio: "9:16" | "1:1" | "16:9" | "4:5";
+  durationSeconds: number;
+  onResolutionChange: (value: "720p" | "1080p") => void;
+  onAspectRatioChange: (value: "9:16" | "1:1" | "16:9" | "4:5") => void;
+  onDurationSecondsChange: (value: number) => void;
+};
 
 function FieldLabel({ children }: { children: string }) {
   return (
@@ -15,8 +24,15 @@ function FieldLabel({ children }: { children: string }) {
   );
 }
 
-export function VideoConfigSection() {
-  const [resolution, setResolution] = useState("720p");
+export function VideoConfigSection({
+  resolution,
+  aiModel,
+  aspectRatio,
+  durationSeconds,
+  onResolutionChange,
+  onAspectRatioChange,
+  onDurationSecondsChange,
+}: VideoConfigSectionProps) {
 
   return (
     <Card className="p-6 md:p-7">
@@ -33,12 +49,12 @@ export function VideoConfigSection() {
               <OptionButton
                 label="720p"
                 active={resolution === "720p"}
-                onClick={() => setResolution("720p")}
+                onClick={() => onResolutionChange("720p")}
               />
               <OptionButton
                 label="1080p"
                 active={resolution === "1080p"}
-                onClick={() => setResolution("1080p")}
+                onClick={() => onResolutionChange("1080p")}
               />
             </div>
           </div>
@@ -48,7 +64,7 @@ export function VideoConfigSection() {
             <div className="rounded-xl border border-[#a8dfbf] bg-[#eaf8f0] px-4 py-3">
               <p className="flex items-center gap-2 text-sm font-semibold text-[#12995a]">
                 <span className="h-2 w-2 rounded-full bg-[#10b862]" />
-                Veo 3.1 Fast
+                {aiModel}
               </p>
               <p className="mt-1 text-xs text-[#6d9984]">
                 Google DeepMind - Ultra-quality food video
@@ -61,7 +77,8 @@ export function VideoConfigSection() {
           <div className="space-y-3">
             <FieldLabel>Tỷ lệ khung hình</FieldLabel>
             <SelectField
-              defaultValue="9:16"
+              value={aspectRatio}
+              onChange={(value) => onAspectRatioChange(value as "9:16" | "1:1" | "16:9" | "4:5")}
               options={[
                 "9:16",
                 "1:1",
@@ -74,7 +91,8 @@ export function VideoConfigSection() {
           <div className="space-y-3">
             <FieldLabel>Thời lượng</FieldLabel>
             <SelectField
-              defaultValue="15 giây"
+              value={`${durationSeconds} giây`}
+              onChange={(value) => onDurationSecondsChange(Number(value.split(" ")[0]))}
               options={["10 giây", "15 giây", "30 giây", "60 giây"]}
             />
           </div>

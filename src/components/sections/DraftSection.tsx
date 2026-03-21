@@ -1,41 +1,47 @@
 "use client";
 
 import { Save } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Card } from "@/components/ui/Card";
 
-export function DraftSection() {
-  const [lastSaved, setLastSaved] = useState<string>("Chưa lưu");
-  const [isSaving, setIsSaving] = useState(false);
+type DraftSectionProps = {
+  isSaving: boolean;
+  lastSavedLabel: string;
+  onSaveDraft: () => void;
+};
+
+export function DraftSection({
+  isSaving,
+  lastSavedLabel,
+  onSaveDraft,
+}: DraftSectionProps) {
+  const isMountedRef = useRef(false);
 
   const handleSaveDraft = () => {
-    setIsSaving(true);
-    setTimeout(() => {
-      const now = new Date();
-      const timeString = now.toLocaleTimeString("vi-VN", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      });
-      setLastSaved(`Lúc ${timeString}`);
-      setIsSaving(false);
-    }, 600);
+    onSaveDraft();
   };
 
   useEffect(() => {
+    isMountedRef.current = true;
+
     const timer = setInterval(() => {
-      handleSaveDraft();
+      if (isMountedRef.current) {
+        handleSaveDraft();
+      }
     }, 300000); // Auto-save every 5 minutes
 
-    return () => clearInterval(timer);
-  }, []);
+    return () => {
+      clearInterval(timer);
+      isMountedRef.current = false;
+    };
+  }, [onSaveDraft]);
 
   return (
     <Card className="p-4 md:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
           <p className="text-[#6e9a86]">Nháp được lưu</p>
-          <p className="font-semibold text-[#2f7056]">{lastSaved}</p>
+          <p className="font-semibold text-[#2f7056]">{lastSavedLabel || "Chưa lưu"}</p>
         </div>
 
         <button

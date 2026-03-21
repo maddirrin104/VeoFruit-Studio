@@ -25,15 +25,30 @@ export function TextArea({ className = "", ...props }: TextAreaProps) {
 }
 
 type SelectFieldProps = {
-  defaultValue: string;
+  defaultValue?: string;
+  value?: string;
+  onChange?: (value: string) => void;
   options: string[];
 };
 
-export function SelectField({ defaultValue, options }: SelectFieldProps) {
+export function SelectField({
+  defaultValue,
+  value,
+  onChange,
+  options,
+}: SelectFieldProps) {
+  const selectProps =
+    value !== undefined
+      ? { value }
+      : defaultValue !== undefined
+      ? { defaultValue }
+      : {};
+
   return (
     <div className="relative">
       <select
-        defaultValue={defaultValue}
+        {...selectProps}
+        onChange={(event) => onChange?.(event.target.value)}
         className={`${baseFieldClass} appearance-none pr-11`}
       >
         {options.map((option) => (
@@ -50,20 +65,27 @@ export function SelectField({ defaultValue, options }: SelectFieldProps) {
 
 type RangeFieldProps = {
   defaultValue?: number;
+  value?: number;
+  onChange?: (value: number) => void;
   minLabel: string;
   maxLabel: string;
 };
 
 export function RangeField({
   defaultValue = 50,
+  value,
+  onChange,
   minLabel,
   maxLabel,
 }: RangeFieldProps) {
+  const rangeProps = value !== undefined ? { value } : { defaultValue };
+
   return (
     <div>
       <input
         type="range"
-        defaultValue={defaultValue}
+        {...rangeProps}
+        onChange={(event) => onChange?.(Number(event.target.value))}
         className="h-2 w-full cursor-pointer appearance-none rounded-full accent-[#0db364]"
       />
       <div className="mt-2 flex items-center justify-between text-xs text-[#5f8e78]">

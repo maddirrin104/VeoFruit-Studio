@@ -4,7 +4,27 @@ import {
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 
-export function PreviewPanel() {
+type PreviewPanelProps = {
+  resolution: string;
+  aspectRatio: string;
+  durationSeconds: number;
+  voiceType: string;
+  visualStyle: string;
+  aiModel: string;
+  generationStatus?: "idle" | "pending" | "processing" | "completed" | "failed";
+  videoUrl?: string;
+};
+
+export function PreviewPanel({
+  resolution,
+  aspectRatio,
+  durationSeconds,
+  voiceType,
+  visualStyle,
+  aiModel,
+  generationStatus = "idle",
+  videoUrl,
+}: PreviewPanelProps) {
   return (
     <div className="space-y-3 xl:sticky xl:top-5 xl:self-start">
       <Card className="p-4">
@@ -17,14 +37,22 @@ export function PreviewPanel() {
 
         <div className="relative flex aspect-9/16 w-full items-center justify-center rounded-xl border border-[#a7dfbe] bg-[linear-gradient(180deg,#d9f6e5_0%,#b9ebcf_100%)]">
           <span className="absolute right-3 top-3 rounded-full bg-[#effcf3] px-3 py-1 text-[11px] font-semibold text-[#10a95d] shadow-[0_6px_12px_rgba(23,96,60,0.14)]">
-            720p HD
+            {resolution} HD
           </span>
 
           <div className="text-center">
             <div className="pulse-soft mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#05b25e] text-white shadow-[0_10px_22px_rgba(5,178,94,0.42)]">
               <Play className="ml-1 size-8" />
             </div>
-            <p className="mt-4 text-sm text-[#39715a]">Chưa có preview</p>
+            <p className="mt-4 text-sm text-[#39715a]">
+              {generationStatus === "completed" && videoUrl
+                ? "Video đã sẵn sàng"
+                : generationStatus === "failed"
+                ? "Tạo video thất bại"
+                : generationStatus === "processing" || generationStatus === "pending"
+                ? "Đang tạo video..."
+                : "Chưa có preview"}
+            </p>
           </div>
         </div>
       </Card>
@@ -37,27 +65,27 @@ export function PreviewPanel() {
         <div className="space-y-3 text-sm">
           <div className="flex items-center justify-between border-b border-[#d2ebdd] pb-2">
             <span className="text-[#5f8f79]">Model</span>
-            <span className="font-semibold text-[#0ea75a]">Veo 3.1 Fast</span>
+            <span className="font-semibold text-[#0ea75a]">{aiModel}</span>
           </div>
           <div className="flex items-center justify-between border-b border-[#d2ebdd] pb-2">
             <span className="text-[#5f8f79]">Resolution</span>
-            <span className="font-semibold text-[#0ea75a]">720p</span>
+            <span className="font-semibold text-[#0ea75a]">{resolution}</span>
           </div>
           <div className="flex items-center justify-between border-b border-[#d2ebdd] pb-2">
             <span className="text-[#5f8f79]">Ratio</span>
-            <span className="font-semibold text-[#0ea75a]">9:16</span>
+            <span className="font-semibold text-[#0ea75a]">{aspectRatio}</span>
           </div>
           <div className="flex items-center justify-between border-b border-[#d2ebdd] pb-2">
             <span className="text-[#5f8f79]">Duration</span>
-            <span className="font-semibold text-[#0ea75a]">15s</span>
+            <span className="font-semibold text-[#0ea75a]">{durationSeconds}s</span>
           </div>
           <div className="flex items-center justify-between border-b border-[#d2ebdd] pb-2">
             <span className="text-[#5f8f79]">Voice</span>
-            <span className="font-semibold text-[#0ea75a]">Nam</span>
+            <span className="font-semibold text-[#0ea75a]">{voiceType}</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-[#5f8f79]">Style</span>
-            <span className="font-semibold text-[#0ea75a]">Cinematic</span>
+            <span className="font-semibold text-[#0ea75a]">{visualStyle}</span>
           </div>
         </div>
       </Card>
