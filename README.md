@@ -1,36 +1,107 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# VeoFruit Studio
 
-## Getting Started
+Web app Next.js + Prisma + PostgreSQL cho quy trinh tao video AI.
 
-First, run the development server:
+## 1. Yeu cau he thong
+
+- Node.js 20+
+- npm 10+
+- PostgreSQL 14+ (local hoac cloud)
+
+## 2. Cai dat du an
+
+```bash
+npm install
+```
+
+## 3. Cau hinh bien moi truong
+
+Tao file `.env` o thu muc goc du an voi noi dung:
+
+```env
+DATABASE_URL="postgresql://postgres:your_password@localhost:5432/veofruit_studio?schema=public"
+```
+
+Ban hay doi:
+
+- `postgres`: user PostgreSQL
+- `your_password`: mat khau PostgreSQL
+- `localhost:5432`: host va port database
+- `veofruit_studio`: ten database
+
+## 4. Tao database va ket noi Prisma
+
+Neu chua co database, tao truoc trong PostgreSQL:
+
+```sql
+CREATE DATABASE veofruit_studio;
+```
+
+Sau do chay migration:
+
+```bash
+npx prisma migrate dev
+```
+
+Lenh nay se:
+
+- Doc schema trong `prisma/schema.prisma`
+- Ap migration trong `prisma/migrations`
+- Tao/refresh Prisma Client
+
+Neu can generate lai Prisma Client thu cong:
+
+```bash
+npx prisma generate
+```
+
+## 5. Chay ung dung
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Mo trinh duyet tai:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- http://localhost:3000
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 6. Kiem tra nhanh ket noi database
 
-## Learn More
+Mo Prisma Studio de xem bang du lieu:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npx prisma studio
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Neu Studio mo duoc va thay cac bang `users`, `video_projects`, `video_generations`, `video_scenes` thi ket noi da OK.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 7. Xu ly loi thuong gap
 
-## Deploy on Vercel
+1. Loi `Environment variable not found: DATABASE_URL`
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Kiem tra da tao file `.env` chua
+- Kiem tra bien `DATABASE_URL` viet dung ten chua
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+2. Loi ket noi PostgreSQL (`P1001`, timeout)
+
+- Kiem tra PostgreSQL da chay chua
+- Kiem tra host/port/user/password trong `DATABASE_URL`
+
+3. Loi migration
+
+- Thu dong bo lai schema:
+
+```bash
+npx prisma migrate reset
+```
+
+Luu y: Lenh tren se xoa du lieu trong database hien tai.
+
+## 8. Lenh huu ich
+
+```bash
+npm run lint            # kiem tra ESLint
+npx tsc --noEmit        # kiem tra TypeScript
+npx prisma migrate dev  # tao/ap migration local
+npx prisma studio       # xem data bang UI
+```
