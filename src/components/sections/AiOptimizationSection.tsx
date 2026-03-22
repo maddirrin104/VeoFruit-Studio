@@ -1,203 +1,212 @@
 "use client";
 
-import { useState } from "react";
 import {
-  Mic,
+  Music,
   Palette,
-  Sparkles,
-  Wand2,
+  RefreshCw,
+  Volume2,
+  Zap,
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
-import { OptionButton } from "@/components/ui/OptionButton";
+import {
+  RangeField,
+  SelectField,
+} from "@/components/ui/FormControls";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { ToggleSwitch } from "@/components/ui/ToggleSwitch";
-import { RangeField, SelectField } from "@/components/ui/FormControls";
 
-function InnerPanel({
-  title,
-  icon,
-  children,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
+type AiOptimizationSectionProps = {
+  emotionStyle: string;
+  visualStyle: string;
+  motionIntensity: number;
+  transitionEnabled: boolean;
+  subjectConsistent: boolean;
+  voiceType: "Nam" | "Nữ" | "Trung tính AI";
+  language: string;
+  readSpeed: number;
+  bgMusicEnabled: boolean;
+  isGeneratingVideo: boolean;
+  onEmotionStyleChange: (value: string) => void;
+  onVisualStyleChange: (value: string) => void;
+  onMotionIntensityChange: (value: number) => void;
+  onTransitionEnabledChange: (value: boolean) => void;
+  onSubjectConsistentChange: (value: boolean) => void;
+  onVoiceTypeChange: (value: "Nam" | "Nữ" | "Trung tính AI") => void;
+  onLanguageChange: (value: string) => void;
+  onReadSpeedChange: (value: number) => void;
+  onBgMusicEnabledChange: (value: boolean) => void;
+  onReset: () => void;
+  onGenerateVideo: () => void;
+};
+
+function FieldLabel({ children }: { children: string }) {
   return (
-    <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
-      <div className="mb-5 flex items-center gap-2 text-sm font-semibold text-fuchsia-200">
-        {icon}
-        <span>{title}</span>
-      </div>
+    <p className="relative pl-2 text-[13px] font-semibold uppercase tracking-wide text-[#2f7056] before:absolute before:left-0 before:top-1 before:h-4 before:w-0.75 before:rounded-full before:bg-[#10b862]">
       {children}
-    </div>
+    </p>
   );
 }
 
-export function AiOptimizationSection() {
-  const [characterConsistency, setCharacterConsistency] = useState(true);
-  const [autoEnhanceScript, setAutoEnhanceScript] = useState(false);
-  const [voiceGender, setVoiceGender] = useState("Female");
-  const [selectedTone, setSelectedTone] = useState<string | null>(null);
-  const [selectedStyle, setSelectedStyle] = useState("Dreamy");
-  const [transitionEffects, setTransitionEffects] = useState(true);
-  const [backgroundMusic, setBackgroundMusic] = useState(true);
-
-  const toneOptions = ["Emotional", "Sales", "Viral", "Educational"];
-  const styleOptions = [
-    "Cinematic",
-    "Anime",
-    "Digital Art",
-    "Realistic",
-    "Fantasy",
-    "Dreamy",
-  ];
+export function AiOptimizationSection({
+  emotionStyle,
+  visualStyle,
+  motionIntensity,
+  transitionEnabled,
+  subjectConsistent,
+  voiceType,
+  language,
+  readSpeed,
+  bgMusicEnabled,
+  isGeneratingVideo,
+  onEmotionStyleChange,
+  onVisualStyleChange,
+  onMotionIntensityChange,
+  onTransitionEnabledChange,
+  onSubjectConsistentChange,
+  onVoiceTypeChange,
+  onLanguageChange,
+  onReadSpeedChange,
+  onBgMusicEnabledChange,
+  onReset,
+  onGenerateVideo,
+}: AiOptimizationSectionProps) {
 
   return (
-    <Card className="p-6 md:p-7">
-      <SectionHeading
-        title="Tối ưu video AI"
-        icon={<Wand2 className="size-5" />}
-      />
+    <div className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card className="p-6 md:p-7">
+          <SectionHeading
+            title="Hình ảnh & chuyển động"
+            icon={<Palette className="size-5" />}
+          />
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <InnerPanel
-          title="Cài đặt chủ đề"
-          icon={<Sparkles className="size-4" />}
-        >
           <div className="space-y-5">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-slate-300">
-                Giữ sự nhất quán của nhân vật
-              </span>
-              <ToggleSwitch
-                checked={characterConsistency}
-                onClick={() => setCharacterConsistency((prev) => !prev)}
-              />
-            </div>
-
             <div className="space-y-2">
-              <p className="text-sm text-slate-300">Cường độ chuyển động</p>
-              <RangeField defaultValue={48} minLabel="Thấp" maxLabel="Cao" />
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-sm text-slate-300">Kiểu cảm xúc</p>
+              <FieldLabel>Cảm xúc</FieldLabel>
               <SelectField
-                defaultValue="Happy"
-                options={["Happy", "Energetic", "Calm", "Luxury"]}
-              />
-            </div>
-          </div>
-        </InnerPanel>
-
-        <InnerPanel
-          title="Tối ưu kịch bản"
-          icon={<Wand2 className="size-4" />}
-        >
-          <div className="space-y-5">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-slate-300">Tự động tạo kịch bản</span>
-              <ToggleSwitch
-                checked={autoEnhanceScript}
-                onClick={() => setAutoEnhanceScript((prev) => !prev)}
+                value={emotionStyle}
+                onChange={onEmotionStyleChange}
+                options={["Vật tươi", "Năng lượng", "Sang trọng", "Tự nhiên"]}
               />
             </div>
 
-            <div className="space-y-3">
-              <p className="text-sm text-slate-300">Kiểu kịch bản</p>
-              <div className="grid grid-cols-2 gap-3">
-                {toneOptions.map((item) => (
-                  <OptionButton
-                    key={item}
-                    label={item}
-                    active={selectedTone === item}
-                    compact
-                    onClick={() => setSelectedTone(item)}
-                  />
-                ))}
+            <div className="space-y-2">
+              <FieldLabel>Phong cách</FieldLabel>
+              <SelectField
+                value={visualStyle}
+                onChange={onVisualStyleChange}
+                options={["Cinematic", "Realistic", "Dreamy", "Lifestyle"]}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <FieldLabel>Cường độ chuyển động</FieldLabel>
+              <RangeField
+                value={motionIntensity}
+                onChange={onMotionIntensityChange}
+                minLabel="Nhẹ (0.5x)"
+                maxLabel="Mạnh (1.5x)"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <FieldLabel>Nhất quán chủ thể</FieldLabel>
+              <div className="rounded-xl border border-[#b8e4cb] bg-[#edf8f2] px-3 py-2.5">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex items-center justify-between rounded-lg px-1 text-sm font-semibold text-[#2f7056]">
+                    <span>Chuyển cảnh</span>
+                    <ToggleSwitch 
+                      checked={transitionEnabled} 
+                      onClick={() => onTransitionEnabledChange(!transitionEnabled)}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-lg px-1 text-sm font-semibold text-[#2f7056]">
+                    <span>Nhất quán chủ thể</span>
+                    <ToggleSwitch 
+                      checked={subjectConsistent} 
+                      onClick={() => onSubjectConsistentChange(!subjectConsistent)}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </InnerPanel>
+        </Card>
 
-        <InnerPanel title="Cài đặt giọng nói" icon={<Mic className="size-4" />}>
+        <Card className="p-6 md:p-7">
+          <SectionHeading
+            title="Âm thanh & thuyết minh"
+            icon={<Volume2 className="size-5" />}
+          />
+
           <div className="space-y-5">
-            <div className="space-y-3">
-              <p className="text-sm text-slate-300">Giới tính</p>
-              <div className="grid grid-cols-3 gap-2">
-                {["Male", "Female", "AI Neutral"].map((item) => (
-                  <OptionButton
-                    key={item}
-                    label={item}
-                    active={voiceGender === item}
-                    compact
-                    onClick={() => setVoiceGender(item)}
-                  />
-                ))}
+            <div className="space-y-2">
+              <FieldLabel>Kiểu giọng</FieldLabel>
+              <SelectField
+                value={voiceType}
+                onChange={(value) => onVoiceTypeChange(value as "Nam" | "Nữ" | "Trung tính AI")}
+                options={["Nam", "Nữ", "Trung tính AI"]}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <FieldLabel>Ngôn ngữ</FieldLabel>
+              <SelectField
+                value={language}
+                onChange={onLanguageChange}
+                options={["Tiếng Việt", "English", "한국어", "日本語"]}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <FieldLabel>Tốc độ đọc</FieldLabel>
+              <RangeField
+                value={readSpeed}
+                onChange={onReadSpeedChange}
+                minLabel="Chậm (0.5x)"
+                maxLabel="Nhanh (1.5x)"
+              />
+            </div>
+
+            <div className="rounded-xl border border-[#b8e4cb] bg-[#edf8f2] px-3 py-2.5">
+              <div className="flex w-full items-center justify-between rounded-lg px-1 text-sm font-semibold text-[#2f7056]">
+                <span className="inline-flex items-center gap-2">
+                  <Music className="size-4" />
+                  Nhạc nền
+                </span>
+                <ToggleSwitch 
+                  checked={bgMusicEnabled} 
+                  onClick={() => onBgMusicEnabledChange(!bgMusicEnabled)}
+                />
               </div>
             </div>
-
-            <div className="space-y-2">
-              <p className="text-sm text-slate-300">Ngôn ngữ</p>
-              <SelectField
-                defaultValue="English"
-                options={["English", "Vietnamese", "Japanese", "Korean"]}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-sm text-slate-300">Tốc độ</p>
-              <RangeField defaultValue={50} minLabel="Chậm" maxLabel="Nhanh" />
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-sm text-slate-300">Cảm xúc</p>
-              <SelectField
-                defaultValue="Energetic"
-                options={["Energetic", "Warm", "Soft", "Luxury"]}
-              />
-            </div>
           </div>
-        </InnerPanel>
-
-        <InnerPanel
-          title="Hiệu ứng & Hình ảnh"
-          icon={<Palette className="size-4" />}
-        >
-          <div className="space-y-5">
-            <div className="space-y-3">
-              <p className="text-sm text-slate-300">Lựa chọn phong cách</p>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-                {styleOptions.map((item) => (
-                  <OptionButton
-                    key={item}
-                    label={item}
-                    active={selectedStyle === item}
-                    compact
-                    onClick={() => setSelectedStyle(item)}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-slate-300">Hiệu ứng chuyển cảnh</span>
-              <ToggleSwitch
-                checked={transitionEffects}
-                onClick={() => setTransitionEffects((prev) => !prev)}
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-slate-300">Nhạc nền</span>
-              <ToggleSwitch
-                checked={backgroundMusic}
-                onClick={() => setBackgroundMusic((prev) => !prev)}
-              />
-            </div>
-          </div>
-        </InnerPanel>
+        </Card>
       </div>
-    </Card>
+
+      <Card className="p-4 md:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={onReset}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-[#c5ddcf] bg-white px-4 text-sm font-semibold text-[#446f5b] shadow-[0_8px_20px_rgba(28,78,53,0.08)] transition hover:border-[#9edfb9]"
+          >
+            <RefreshCw className="size-4" />
+            Làm lại
+          </button>
+
+          <button
+            type="button"
+            onClick={onGenerateVideo}
+            disabled={isGeneratingVideo}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#0db461] px-7 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(13,180,97,0.35)] transition hover:bg-[#0aa757]"
+          >
+            <Zap className="size-4" />
+            {isGeneratingVideo ? "Đang tạo..." : "Tạo video AI"}
+          </button>
+        </div>
+      </Card>
+    </div>
   );
 }

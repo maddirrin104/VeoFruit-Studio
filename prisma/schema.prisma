@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String        @id @default(uuid()) @db.Uuid
+  email        String        @unique @db.VarChar(255)
+  fullName     String        @db.VarChar(126) @map("full_name")
+  passwordHash String        @db.Text @map("password_hash")
+  createdAt    DateTime      @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  projects     VideoProject[]
+
+  @@map("users")
+}
+
+model VideoProject {
+  id             String            @id @default(uuid()) @db.Uuid
+  userId         String            @db.Uuid @map("user_id")
+  title          String            @db.VarChar(255)
+  storyTopic     String?           @db.Text @map("story_topic")
+  videoGenre     String?           @db.VarChar(100) @map("video_genre")
+  numberOfScenes Int?              @map("number_of_scenes")
+  status         String?           @db.VarChar(20)
+  createdAt      DateTime          @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  generations    VideoGeneration[]
+
+  @@index([userId])
+  @@map("video_projects")
+}
+
+model VideoGeneration {
+  id              String        @id @default(uuid()) @db.Uuid
+  projectId       String        @db.Uuid @map("project_id")
+  generationNo    Int           @map("generation_no")
+  aiModel         String?       @db.VarChar(50) @map("ai_model")
+  resolution      String?       @db.VarChar(20)
+  aspectRatio     String?       @db.VarChar(10) @map("aspect_ratio")
+  voiceSettings   Json?         @map("voice_settings")
+  status          String?       @db.VarChar(20)
+  outputUrl       String?       @db.Text @map("output_url")
+  thumbnailUrl    String?       @db.Text @map("thumbnail_url")
+  durationSeconds Int?          @map("duration_seconds")
+  createdAt       DateTime      @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  project         VideoProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scenes          VideoScene[]
+
+  @@index([projectId])
+  @@unique([projectId, generationNo])
+  @@map("video_generations")
+}
+
+model VideoScene {
+  id           String          @id @default(uuid()) @db.Uuid
+  generationId String          @db.Uuid @map("generation_id")
+  sceneOrder   Int             @map("scene_order")
+  promptText   String?         @db.Text @map("prompt_text")
+  imageUrl     String?         @db.Text @map("image_url")
+  audioUrl     String?         @db.Text @map("audio_url")
+
+  generation   VideoGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  @@index([generationId])
+  @@unique([generationId, sceneOrder])
+  @@map("video_scenes")
+}

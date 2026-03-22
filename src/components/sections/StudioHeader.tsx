@@ -1,19 +1,26 @@
-import { Video } from "lucide-react";
+import {
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 
 export function StudioHeader() {
   return (
-    <header className="mb-8 flex flex-col items-center text-center md:mb-10">
-      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-[22px] border border-fuchsia-500/30 bg-fuchsia-500/15 text-fuchsia-300 shadow-[0_0_60px_rgba(217,70,239,0.18)]">
-        <Video className="size-8" />
+    <header className="mb-7 flex flex-col items-center text-center md:mb-8">
+      <div className="mb-3 inline-flex items-center gap-3 rounded-2xl border border-[#bde4cd] bg-[#eff9f3] px-4 py-2 shadow-[0_12px_28px_rgba(31,118,76,0.14)]">
+        <span className="inline-flex size-10 items-center justify-center rounded-xl bg-gradient-to-b from-[#20c06f] to-[#0cab5d] text-white shadow-[0_8px_16px_rgba(14,171,92,0.3)]">
+          <ShieldCheck className="size-5" />
+        </span>
+        <h1 className="font-[family:var(--font-sora)] text-[40px] font-semibold tracking-tight text-[#039f57] md:text-[46px]">
+          VeoFruit Studio
+        </h1>
+        <Sparkles className="size-5 text-[#0eb35f]" />
       </div>
 
-      <h1 className="bg-gradient-to-r from-white via-fuchsia-200 to-fuchsia-400 bg-clip-text text-4xl font-bold tracking-tight text-transparent md:text-5xl">
-        VeoFruit Studio
-      </h1>
-
-      <p className="mt-3 text-base text-slate-300 md:text-xl">
-        Create marketing videos automatically with AI
+      <p className="mt-1 text-[20px] text-[#2f6f56] md:text-[22px]">
+        Tạo video giới thiệu trái cây tự động với AI
       </p>
+
+      <p className="mt-2 text-sm text-[#6e9a86]">Powered by Google DeepMind</p>
     </header>
   );
 }
