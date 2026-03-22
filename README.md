@@ -20,6 +20,7 @@ Tao file `.env` o thu muc goc du an voi noi dung:
 
 ```env
 DATABASE_URL="postgresql://postgres:your_password@localhost:5432/veofruit_studio?schema=public"
+RUNWAYML_API_SECRET="your_runway_api_secret"
 ```
 
 Ban hay doi:
@@ -28,6 +29,7 @@ Ban hay doi:
 - `your_password`: mat khau PostgreSQL
 - `localhost:5432`: host va port database
 - `veofruit_studio`: ten database
+- `your_runway_api_secret`: API Secret tu RunwayML
 
 ## 4. Tao database va ket noi Prisma
 

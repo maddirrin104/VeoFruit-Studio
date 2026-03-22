@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { Veo3Error, generateVideoWithVeo3, buildVideoPrompt } from "@/lib/veo3";
+import { buildVideoPrompt } from "@/lib/veo3";
+import {
+  RunwayGenerationError,
+  generateVideoWithRunway,
+  mapAspectRatioToRunwayRatio,
+} from "@/lib/runway";
 import { CreateGenerationRequest } from "@/types/studio";
 
 export async function POST(request: NextRequest) {
@@ -48,7 +53,7 @@ export async function POST(request: NextRequest) {
         projectId,
         generationNo,
         status: "pending",
-        aiModel: videoConfig.aiModel,
+        aiModel: "runway-gen4.5",
         resolution: videoConfig.resolution,
         aspectRatio: videoConfig.aspectRatio,
         durationSeconds: videoConfig.durationSeconds,
@@ -56,13 +61,18 @@ export async function POST(request: NextRequest) {
     }) as any;
 
     // Start video generation in background
-    generateVideoInBackground(
+    void generateVideoInBackground(
       generation.id,
       project,
       videoConfig,
       imageConfig,
       promptContext
-    );
+    ).catch((error) => {
+      console.error(
+        `[Generation ${generation.id}] Background generation job crashed unexpectedly:`,
+        error
+      );
+    });
 
     return NextResponse.json(
       {
@@ -165,13 +175,14 @@ async function generateVideoInBackground(
       }
     );
 
-    console.log(`[Generation ${generationId}] Starting Veo3 video generation...`);
+    console.log(`[Generation ${generationId}] Starting Runway video generation...`);
 
-    // Generate video
-    const result = await generateVideoWithVeo3(
+    const result = await generateVideoWithRunway({
       prompt,
-      videoConfig.durationSeconds
-    );
+      model: "gen4.5",
+      ratio: mapAspectRatioToRunwayRatio(videoConfig.aspectRatio),
+      durationSeconds: videoConfig.durationSeconds,
+    });
 
     // Update generation with success
     await (prisma.videoGeneration.update as any)({
@@ -188,7 +199,7 @@ async function generateVideoInBackground(
 
     const fallbackMessage = "Không thể tạo video lúc này. Vui lòng thử lại sau.";
     const errorMessage =
-      error instanceof Veo3Error
+      error instanceof RunwayGenerationError
         ? error.message
         : (error as Error)?.message || fallbackMessage;
 
