@@ -61,13 +61,13 @@ export function AiOptimizationSection() {
 
       <div className="grid gap-4 xl:grid-cols-2">
         <InnerPanel
-          title="Subject Settings"
+          title="Cài đặt chủ đề"
           icon={<Sparkles className="size-4" />}
         >
           <div className="space-y-5">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-slate-300">
-                Character consistency
+                Giữ sự nhất quán của nhân vật
               </span>
               <ToggleSwitch
                 checked={characterConsistency}
@@ -76,12 +76,12 @@ export function AiOptimizationSection() {
             </div>
 
             <div className="space-y-2">
-              <p className="text-sm text-slate-300">Motion intensity</p>
-              <RangeField defaultValue={48} minLabel="Subtle" maxLabel="Dynamic" />
+              <p className="text-sm text-slate-300">Cường độ chuyển động</p>
+              <RangeField defaultValue={48} minLabel="Thấp" maxLabel="Cao" />
             </div>
 
             <div className="space-y-2">
-              <p className="text-sm text-slate-300">Emotion style</p>
+              <p className="text-sm text-slate-300">Kiểu cảm xúc</p>
               <SelectField
                 defaultValue="Happy"
                 options={["Happy", "Energetic", "Calm", "Luxury"]}
@@ -91,12 +91,12 @@ export function AiOptimizationSection() {
         </InnerPanel>
 
         <InnerPanel
-          title="Script Optimization"
+          title="Tối ưu kịch bản"
           icon={<Wand2 className="size-4" />}
         >
           <div className="space-y-5">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-slate-300">Auto-enhance script</span>
+              <span className="text-sm text-slate-300">Tự động tạo kịch bản</span>
               <ToggleSwitch
                 checked={autoEnhanceScript}
                 onClick={() => setAutoEnhanceScript((prev) => !prev)}
@@ -104,7 +104,7 @@ export function AiOptimizationSection() {
             </div>
 
             <div className="space-y-3">
-              <p className="text-sm text-slate-300">Tone selector</p>
+              <p className="text-sm text-slate-300">Kiểu kịch bản</p>
               <div className="grid grid-cols-2 gap-3">
                 {toneOptions.map((item) => (
                   <OptionButton
@@ -120,10 +120,10 @@ export function AiOptimizationSection() {
           </div>
         </InnerPanel>
 
-        <InnerPanel title="Voice Settings" icon={<Mic className="size-4" />}>
+        <InnerPanel title="Cài đặt giọng nói" icon={<Mic className="size-4" />}>
           <div className="space-y-5">
             <div className="space-y-3">
-              <p className="text-sm text-slate-300">Voice gender</p>
+              <p className="text-sm text-slate-300">Giới tính</p>
               <div className="grid grid-cols-3 gap-2">
                 {["Male", "Female", "AI Neutral"].map((item) => (
                   <OptionButton
@@ -138,7 +138,7 @@ export function AiOptimizationSection() {
             </div>
 
             <div className="space-y-2">
-              <p className="text-sm text-slate-300">Language</p>
+              <p className="text-sm text-slate-300">Ngôn ngữ</p>
               <SelectField
                 defaultValue="English"
                 options={["English", "Vietnamese", "Japanese", "Korean"]}
@@ -146,12 +146,12 @@ export function AiOptimizationSection() {
             </div>
 
             <div className="space-y-2">
-              <p className="text-sm text-slate-300">Speed</p>
-              <RangeField defaultValue={50} minLabel="Slow" maxLabel="Fast" />
+              <p className="text-sm text-slate-300">Tốc độ</p>
+              <RangeField defaultValue={50} minLabel="Chậm" maxLabel="Nhanh" />
             </div>
 
             <div className="space-y-2">
-              <p className="text-sm text-slate-300">Emotion</p>
+              <p className="text-sm text-slate-300">Cảm xúc</p>
               <SelectField
                 defaultValue="Energetic"
                 options={["Energetic", "Warm", "Soft", "Luxury"]}
@@ -161,12 +161,12 @@ export function AiOptimizationSection() {
         </InnerPanel>
 
         <InnerPanel
-          title="Effects & Visuals"
+          title="Hiệu ứng & Hình ảnh"
           icon={<Palette className="size-4" />}
         >
           <div className="space-y-5">
             <div className="space-y-3">
-              <p className="text-sm text-slate-300">Style selection</p>
+              <p className="text-sm text-slate-300">Lựa chọn phong cách</p>
               <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
                 {styleOptions.map((item) => (
                   <OptionButton
@@ -181,7 +181,7 @@ export function AiOptimizationSection() {
             </div>
 
             <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-slate-300">Transition effects</span>
+              <span className="text-sm text-slate-300">Hiệu ứng chuyển cảnh</span>
               <ToggleSwitch
                 checked={transitionEffects}
                 onClick={() => setTransitionEffects((prev) => !prev)}
@@ -189,7 +189,7 @@ export function AiOptimizationSection() {
             </div>
 
             <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-slate-300">Background music</span>
+              <span className="text-sm text-slate-300">Nhạc nền</span>
               <ToggleSwitch
                 checked={backgroundMusic}
                 onClick={() => setBackgroundMusic((prev) => !prev)}

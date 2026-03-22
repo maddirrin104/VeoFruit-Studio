@@ -15,32 +15,32 @@ export function ContentEditorSection() {
       <div className="space-y-6">
         <div className="space-y-2">
           <label className="block text-sm font-medium text-slate-200">
-            Story Topic
+            Chủ đề
           </label>
-          <TextInput placeholder="Enter your story topic..." />
+          <TextInput placeholder="Nhập chủ đề câu chuyện của bạn..." />
         </div>
 
         <div className="space-y-2">
           <label className="block text-sm font-medium text-slate-200">
-            Main Character Description
+            Mô tả nhân vật chính
           </label>
-          <TextInput placeholder="Describe your main character..." />
+          <TextInput placeholder="Nhập mô tả nhân vật chính của bạn..." />
           <p className="text-xs text-slate-500">
-            Character should remain consistent across scenes
+            Nhân vật nên giữ được sự nhất quán trong các cảnh
           </p>
         </div>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-3">
             <label className="block text-sm font-medium text-slate-200">
-              Script Input
+              Kịch bản
             </label>
 
             <button
               type="button"
               className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-slate-300 transition hover:border-white/20"
             >
-              Auto-generate
+              Tự động tạo
             </button>
           </div>
 
@@ -53,27 +53,27 @@ export function ContentEditorSection() {
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <label className="block text-sm font-medium text-slate-200">
-              Video Genre
+              Thể loại video
             </label>
             <SelectField
-              defaultValue="Select genre..."
+              defaultValue="Chọn thể loại..."
               options={[
-                "Select genre...",
-                "Fruit promotion",
-                "Brand story",
-                "Seasonal campaign",
-                "Lifestyle commercial",
+                "Chọn thể loại...",
+                "Quảng cáo trái cây",
+                "Câu chuyện thương hiệu",
+                "Chiến dịch theo mùa",
+                "Quảng cáo phong cách sống",
               ]}
             />
           </div>
 
           <div className="space-y-2">
             <label className="block text-sm font-medium text-slate-200">
-              Number of Scenes
+              Số lượng cảnh
             </label>
             <SelectField
-              defaultValue="3 scenes"
-              options={["3 scenes", "4 scenes", "5 scenes", "6 scenes"]}
+              defaultValue="3 cảnh"
+              options={["3 cảnh", "4 cảnh", "5 cảnh", "6 cảnh"]}
             />
           </div>
         </div>

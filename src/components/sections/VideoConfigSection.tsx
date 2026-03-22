@@ -20,7 +20,7 @@ export function VideoConfigSection() {
 
       <div className="space-y-6">
         <div className="space-y-3">
-          <p className="text-sm font-medium text-slate-200">Resolution</p>
+          <p className="text-sm font-medium text-slate-200">Chất lượng</p>
           <div className="grid gap-3 md:grid-cols-2">
             <OptionButton
               label="720p"
@@ -46,7 +46,7 @@ export function VideoConfigSection() {
 
         <div className="grid gap-6 md:grid-cols-2">
           <div className="space-y-3">
-            <p className="text-sm font-medium text-slate-200">Aspect Ratio</p>
+            <p className="text-sm font-medium text-slate-200">Tỷ lệ khung hình</p>
             <div className="grid gap-3">
               <OptionButton
                 label="9:16 (TikTok/Reels)"
@@ -62,7 +62,7 @@ export function VideoConfigSection() {
           </div>
 
           <div className="space-y-3">
-            <p className="text-sm font-medium text-slate-200">Duration</p>
+            <p className="text-sm font-medium text-slate-200">Thời lượng</p>
             <div className="grid gap-3">
               <OptionButton
                 label="15s"
