@@ -1,10 +1,10 @@
 import RunwayML, { TaskFailedError, TaskTimedOutError } from "@runwayml/sdk";
 
-const apiKey = process.env.RUNWAYML_API_SECRET ?? process.env.RUNWAY_API_KEY;
+const apiKey = process.env.RUNWAY_API_KEY;
 
 if (!apiKey) {
   throw new Error(
-    "RUNWAYML_API_SECRET (or RUNWAY_API_KEY) environment variable is required"
+    "or RUNWAY_API_KEY environment variable is required"
   );
 }
 
