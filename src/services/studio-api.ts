@@ -72,6 +72,10 @@ export async function updateProject(
 export async function generateScript(payload: {
   topic: string;
   characterDescription?: string;
+  characterType?: string;
+  sceneLocation?: string;
+  voiceType?: "Nam" | "Nữ" | "Trung tính AI";
+  videoGenre?: string;
   contentTone?: string;
   numberOfScenes?: number;
 }): Promise<{ script: string; estimatedDuration: string; sceneCount: number }> {

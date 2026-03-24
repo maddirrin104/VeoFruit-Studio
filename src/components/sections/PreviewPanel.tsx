@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import Image from "next/image";
 import {
+  ImagePlus,
   Monitor,
   Play,
 } from "lucide-react";
@@ -14,6 +15,9 @@ type PreviewPanelProps = {
   voiceType: string;
   visualStyle: string;
   aiModel: string;
+  sampleImageUrl?: string;
+  sampleImageName?: string;
+  onSampleImageChange: (file: File | null) => void;
   generationStatus?: "idle" | "pending" | "processing" | "completed" | "failed";
   videoUrl?: string;
 };
@@ -25,6 +29,9 @@ export function PreviewPanel({
   voiceType,
   visualStyle,
   aiModel,
+  sampleImageUrl,
+  sampleImageName,
+  onSampleImageChange,
   generationStatus = "idle",
   videoUrl,
 }: PreviewPanelProps) {
@@ -84,6 +91,39 @@ export function PreviewPanel({
             Mở video ở tab mới
           </a>
         ) : null}
+
+        <div className="mt-4 space-y-2 rounded-xl border border-dashed border-[#b4ddc5] bg-[#eff9f3] p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#4a7e65]">
+            Ảnh sản phẩm mẫu (tùy chọn)
+          </p>
+
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#8ed0ad] bg-white px-3 py-2 text-xs font-semibold text-[#1b6e48] transition hover:border-[#67c193]">
+            <ImagePlus className="size-4" />
+            Tải ảnh mẫu
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => onSampleImageChange(event.target.files?.[0] ?? null)}
+            />
+          </label>
+
+          {sampleImageUrl ? (
+            <div className="overflow-hidden rounded-lg border border-[#a8d8bc] bg-white">
+              <Image
+                src={sampleImageUrl}
+                alt="Ảnh sản phẩm mẫu"
+                width={400}
+                height={160}
+                unoptimized
+                className="h-24 w-full object-cover"
+              />
+              <p className="truncate px-3 py-2 text-xs text-[#3f6f5a]">{sampleImageName}</p>
+            </div>
+          ) : (
+            <p className="text-xs text-[#5f8f79]">Chưa chọn ảnh mẫu.</p>
+          )}
+        </div>
       </Card>
 
       <Card className="p-4">

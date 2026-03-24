@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 interface GenerateScriptRequest {
   topic: string;
   characterDescription?: string;
+  characterType?: string;
+  sceneLocation?: string;
+  voiceType?: "Nam" | "Nữ" | "Trung tính AI";
+  videoGenre?: string;
   contentTone?: string;
   numberOfScenes?: number;
 }
@@ -18,15 +22,27 @@ export async function POST(request: NextRequest) {
 
     const {
       topic,
-      characterDescription = "A farmer",
-      contentTone = "Engaging",
+      characterDescription = "",
+      characterType = "Nữ bán trái cây xinh tươi",
+      sceneLocation = "Cửa hàng trái cây",
+      voiceType = "Nữ",
+      videoGenre = "Giới thiệu trong cửa hàng",
+      contentTone = "Giới thiệu",
       numberOfScenes = 3,
     } = body;
+
+    const resolvedCharacterDescription =
+      characterDescription.trim() ||
+      buildDefaultCharacterDescription(voiceType, characterType, sceneLocation);
 
     // Template script generator (replace with actual AI API call)
     const script = generateTemplateScript(
       topic,
-      characterDescription,
+      resolvedCharacterDescription,
+      characterType,
+      sceneLocation,
+      voiceType,
+      videoGenre,
       contentTone,
       numberOfScenes
     );
@@ -53,7 +69,11 @@ export async function POST(request: NextRequest) {
  */
 function generateTemplateScript(
   topic: string,
-  character: string,
+  characterDescription: string,
+  characterType: string,
+  sceneLocation: string,
+  voiceType: "Nam" | "Nữ" | "Trung tính AI",
+  videoGenre: string,
   tone: string,
   scenes: number
 ): string {
@@ -64,7 +84,11 @@ function generateTemplateScript(
       i,
       scenes,
       topic,
-      character,
+      characterDescription,
+      characterType,
+      sceneLocation,
+      voiceType,
+      videoGenre,
       tone
     );
     sceneScripts.push(sceneContent);
@@ -77,41 +101,57 @@ function generateSceneContent(
   sceneNum: number,
   totalScenes: number,
   topic: string,
-  character: string,
+  characterDescription: string,
+  characterType: string,
+  sceneLocation: string,
+  voiceType: "Nam" | "Nữ" | "Trung tính AI",
+  videoGenre: string,
   tone: string
 ): string {
-  const introScenes: Record<string, string> = {
-    1: `SCENE ${sceneNum} - INTRODUCTION
-${character} appears on screen, looking directly at the camera with a warm smile.
-
-NARRATION: "Chào bạn! Hôm nay tôi muốn giới thiệu với bạn về ${topic}."
-
-VISUAL: Close-up of ${topic} being held or displayed beautifully.`,
-  };
-
-  const middleScenes: Record<string, string> = {
-    2: `SCENE ${sceneNum} - HIGHLIGHTS
-${character} is shown interacting with ${topic}, pointing out key features.
-
-NARRATION: "Điều đặc biệt về ${topic} là chất lượng và độ tươi mới."
-
-VISUAL: Multiple angles showing the best features of ${topic}.`,
-  };
-
-  const closingScenes: Record<string, string> = {
-    3: `SCENE ${sceneNum} - CLOSING
-${character} gives a goodbye gesture to camera.
-
-NARRATION: "Cảm ơn các bạn đã xem! Hãy thử ${topic} hôm nay nhé!"
-
-VISUAL: ${topic} in perfect lighting, fade to white.`,
-  };
-
   if (sceneNum === 1) {
-    return introScenes[1];
-  } else if (sceneNum === totalScenes) {
-    return closingScenes[totalScenes];
-  } else {
-    return middleScenes[2] || middleScenes[sceneNum.toString()] || middleScenes[2];
+    return `SCENE ${sceneNum} - MỞ CẢNH
+BỐI CẢNH: ${sceneLocation}. THỂ LOẠI: ${videoGenre}. TÔNG: ${tone}.
+
+NHÂN VẬT: ${characterType}. MÔ TẢ: ${characterDescription}
+
+LỜI THOẠI: "Xin chào cả nhà! Hôm nay ${voiceType === "Nữ" ? "em" : voiceType === "Nam" ? "anh" : "mình"} muốn giới thiệu ${topic} tươi ngon vừa về tại ${sceneLocation.toLowerCase()}."
+
+HÌNH ẢNH: Cận cảnh ${topic}, nhân vật mỉm cười và nâng trái cây về phía máy quay.`;
   }
+
+  if (sceneNum === totalScenes) {
+    return `SCENE ${sceneNum} - KẾT CẢNH
+BỐI CẢNH: ${sceneLocation} với ánh sáng ấm áp.
+
+LỜI THOẠI: "Cảm ơn bạn đã xem! Nếu thích ${topic}, ghé ${sceneLocation.toLowerCase()} để ${voiceType === "Nữ" ? "em" : voiceType === "Nam" ? "anh" : "mình"} tư vấn thêm nhé!"
+
+HÌNH ẢNH: Nhân vật vẫy tay chào, logo cửa hàng xuất hiện, kết thúc mềm mại.`;
+  }
+
+  return `SCENE ${sceneNum} - NỘI DUNG CHÍNH
+BỐI CẢNH: ${sceneLocation}. NHÂN VẬT: ${characterType}.
+
+LỜI THOẠI: "${topic} có vị ngọt tự nhiên, mọng nước và phù hợp cho cả gia đình. ${voiceType === "Nữ" ? "Em" : voiceType === "Nam" ? "Anh" : "Mình"} sẽ gợi ý cách chọn quả ngon ngay tại quầy."
+
+HÌNH ẢNH: Nhân vật chọn từng quả ${topic}, chỉ rõ độ tươi, vỏ, màu sắc và cách bảo quản.`;
+}
+
+function buildDefaultCharacterDescription(
+  voiceType: "Nam" | "Nữ" | "Trung tính AI",
+  characterType: string,
+  sceneLocation: string
+): string {
+  if (characterType.includes("Nữ") || voiceType === "Nữ") {
+    return `Chị bán trái cây xinh tươi tại ${sceneLocation}, nụ cười thân thiện, giọng nói ngọt ngào.`;
+  }
+
+  if (characterType.includes("Nam") || voiceType === "Nam") {
+    return `Anh bán trái cây dễ thương tại ${sceneLocation}, hiền lành, lịch sự và tư vấn rõ ràng.`;
+  }
+
+  if (characterType.includes("3D")) {
+    return `Nhân vật 3D hoạt hình tại ${sceneLocation}, biểu cảm sinh động, giọng điệu vui tươi.`;
+  }
+
+  return `Nhân vật thân thiện tại ${sceneLocation}, phong cách gần gũi và tự nhiên.`;
 }

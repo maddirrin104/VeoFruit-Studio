@@ -17,13 +17,87 @@ import {
 
 type GenerationState = "idle" | "pending" | "processing" | "completed" | "failed";
 
+const CHARACTER_TYPES = [
+  "Nữ bán trái cây xinh tươi",
+  "Nam bán trái cây dễ thương",
+  "Nhân vật 3D hoạt hình",
+  "Bé giới thiệu trái cây",
+] as const;
+
+const SCENE_LOCATIONS = [
+  "Cửa hàng trái cây",
+  "Quầy trái cây trong trung tâm thương mại",
+  "Sạp trái cây ngoài chợ",
+  "Nông trại trái cây",
+  "Bếp gia đình",
+] as const;
+
+const CONTENT_TONES = [
+  "Giới thiệu",
+  "Hướng dẫn",
+  "So sánh",
+  "Lợi ích sức khỏe",
+  "Viral",
+  "Review",
+  "Giáo dục",
+  "Kể chuyện",
+  "Hài hước",
+  "Bán hàng nhẹ nhàng",
+  "Livestream",
+  "Khuyến mãi",
+  "Chia sẻ mẹo chọn trái cây",
+  "Phong cách đời thường",
+  "Cảm hứng tích cực",
+] as const;
+
+const VIDEO_GENRES = [
+  "Giới thiệu trái cây",
+  "Giới thiệu trong cửa hàng",
+  "Kể chuyện thương hiệu",
+  "Quảng cáo theo mùa",
+  "Review sản phẩm",
+  "So sánh và tư vấn chọn mua",
+  "Talkshow bán hàng",
+  "Minigame tương tác",
+  "Livestream demo",
+  "Nấu ăn cùng trái cây",
+  "Bí quyết bảo quản trái cây",
+] as const;
+
+function pickRandom<T>(items: readonly T[]): T {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function buildDefaultCharacterDescription(
+  voiceType: "Nam" | "Nữ" | "Trung tính AI",
+  characterType: string,
+  sceneLocation: string
+) {
+  if (characterType.includes("Nữ") || voiceType === "Nữ") {
+    return `Chị bán trái cây xinh tươi tại ${sceneLocation}, nụ cười thân thiện, giọng nói ngọt ngào và tự nhiên.`;
+  }
+
+  if (characterType.includes("Nam") || voiceType === "Nam") {
+    return `Anh bán trái cây dễ thương tại ${sceneLocation}, hiền lành, lịch sự và giới thiệu rõ ràng từng loại quả.`;
+  }
+
+  if (characterType.includes("3D")) {
+    return `Nhân vật 3D hoạt hình tại ${sceneLocation}, biểu cảm sinh động, cách nói gần gũi và vui tươi.`;
+  }
+
+  return `Nhân vật thân thiện tại ${sceneLocation}, giới thiệu trái cây mạch lạc, dễ hiểu và tích cực.`;
+}
+
 const DEFAULT_FORM = {
   title: "Dự án video trái cây",
   storyTopic: "",
-  characterDescription: "",
+  characterType: "Nữ bán trái cây xinh tươi",
+  sceneLocation: "Cửa hàng trái cây",
+  characterDescription:
+    "Chị bán trái cây xinh tươi tại cửa hàng trái cây, nụ cười thân thiện, giọng nói ngọt ngào và tự nhiên.",
   script: "",
   contentTone: "Giới thiệu",
-  videoGenre: "Giới thiệu trái cây",
+  videoGenre: "Giới thiệu trong cửa hàng",
   numberOfScenes: 3,
   resolution: "720p" as "720p" | "1080p",
   aiModel: "Veo 3.1 Fast",
@@ -50,6 +124,8 @@ export default function HomePage() {
   const [generationId, setGenerationId] = useState<string | null>(null);
   const [generationStatus, setGenerationStatus] = useState<GenerationState>("idle");
   const [videoUrl, setVideoUrl] = useState<string | undefined>(undefined);
+  const [sampleImageUrl, setSampleImageUrl] = useState<string | undefined>(undefined);
+  const [sampleImageName, setSampleImageName] = useState<string | undefined>(undefined);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const updateForm = useCallback((partial: Partial<typeof DEFAULT_FORM>) => {
@@ -123,7 +199,7 @@ export default function HomePage() {
 
   const handleGenerateScript = useCallback(async () => {
     if (!form.storyTopic.trim()) {
-      setErrorMessage("Vui lòng nhập chủ đề trái cây trước khi AI tạo kịch bản.");
+      setErrorMessage("Vui lòng chọn trái cây trước khi AI tạo kịch bản.");
       return;
     }
 
@@ -134,6 +210,10 @@ export default function HomePage() {
       const result = await generateScript({
         topic: form.storyTopic,
         characterDescription: form.characterDescription,
+        characterType: form.characterType,
+        sceneLocation: form.sceneLocation,
+        voiceType: form.voiceType,
+        videoGenre: form.videoGenre,
         contentTone: form.contentTone,
         numberOfScenes: form.numberOfScenes,
       });
@@ -144,7 +224,75 @@ export default function HomePage() {
     } finally {
       setIsGeneratingScript(false);
     }
-  }, [form.characterDescription, form.contentTone, form.numberOfScenes, form.storyTopic, updateForm]);
+  }, [
+    form.characterDescription,
+    form.characterType,
+    form.contentTone,
+    form.numberOfScenes,
+    form.sceneLocation,
+    form.storyTopic,
+    form.videoGenre,
+    form.voiceType,
+    updateForm,
+  ]);
+
+  const handleRandomizeScript = useCallback(async () => {
+    if (!form.storyTopic.trim()) {
+      setErrorMessage("Vui lòng chọn trái cây trước khi random kịch bản.");
+      return;
+    }
+
+    const randomCharacterType = pickRandom(CHARACTER_TYPES);
+    const randomSceneLocation = pickRandom(SCENE_LOCATIONS);
+    const randomContentTone = pickRandom(CONTENT_TONES);
+    const randomGenre = pickRandom(VIDEO_GENRES);
+    const randomScenes = pickRandom([3, 4, 5, 6] as const);
+
+    const nextVoiceType =
+      randomCharacterType.includes("Nữ")
+        ? "Nữ"
+        : randomCharacterType.includes("Nam")
+        ? "Nam"
+        : form.voiceType;
+
+    const randomCharacterDescription = buildDefaultCharacterDescription(
+      nextVoiceType,
+      randomCharacterType,
+      randomSceneLocation
+    );
+
+    updateForm({
+      characterType: randomCharacterType,
+      sceneLocation: randomSceneLocation,
+      contentTone: randomContentTone,
+      videoGenre: randomGenre,
+      numberOfScenes: randomScenes,
+      voiceType: nextVoiceType,
+      characterDescription: randomCharacterDescription,
+    });
+
+    setIsGeneratingScript(true);
+    setErrorMessage(null);
+
+    try {
+      const result = await generateScript({
+        topic: form.storyTopic,
+        characterDescription: randomCharacterDescription,
+        characterType: randomCharacterType,
+        sceneLocation: randomSceneLocation,
+        voiceType: nextVoiceType,
+        videoGenre: randomGenre,
+        contentTone: randomContentTone,
+        numberOfScenes: randomScenes,
+      });
+
+      updateForm({ script: result.script });
+    } catch (error) {
+      setErrorMessage((error as Error).message);
+    } finally {
+      setIsGeneratingScript(false);
+    }
+  }, [form.storyTopic, form.voiceType, updateForm]);
 
   const handleGenerateVideo = useCallback(async () => {
     setIsGeneratingVideo(true);
@@ -252,11 +400,39 @@ export default function HomePage() {
 
   const previewStatus = useMemo<GenerationState>(() => generationStatus, [generationStatus]);
 
+  const handleSampleImageChange = useCallback((file: File | null) => {
+    setSampleImageName(file?.name);
+
+    setSampleImageUrl((currentUrl) => {
+      if (currentUrl) {
+        URL.revokeObjectURL(currentUrl);
+      }
+
+      return file ? URL.createObjectURL(file) : undefined;
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (sampleImageUrl) {
+        URL.revokeObjectURL(sampleImageUrl);
+      }
+    };
+  }, [sampleImageUrl]);
+
   const handleReset = useCallback(() => {
     setForm(DEFAULT_FORM);
     setGenerationId(null);
     setGenerationStatus("idle");
     setVideoUrl(undefined);
+    setSampleImageName(undefined);
+    setSampleImageUrl((currentUrl) => {
+      if (currentUrl) {
+        URL.revokeObjectURL(currentUrl);
+      }
+
+      return undefined;
+    });
     setErrorMessage(null);
   }, []);
 
@@ -276,6 +452,8 @@ export default function HomePage() {
               <ContentEditorSection
                 storyTopic={form.storyTopic}
                 characterDescription={form.characterDescription}
+                characterType={form.characterType}
+                sceneLocation={form.sceneLocation}
                 script={form.script}
                 contentTone={form.contentTone}
                 videoGenre={form.videoGenre}
@@ -283,11 +461,44 @@ export default function HomePage() {
                 isGeneratingScript={isGeneratingScript}
                 onStoryTopicChange={(value) => updateForm({ storyTopic: value })}
                 onCharacterDescriptionChange={(value) => updateForm({ characterDescription: value })}
+                onCharacterTypeChange={(value) => {
+                  updateForm({
+                    characterType: value,
+                    ...(form.characterDescription.trim()
+                      ? {}
+                      : {
+                          characterDescription: buildDefaultCharacterDescription(
+                            value.includes("Nữ")
+                              ? "Nữ"
+                              : value.includes("Nam")
+                              ? "Nam"
+                              : form.voiceType,
+                            value,
+                            form.sceneLocation
+                          ),
+                        }),
+                  });
+                }}
+                onSceneLocationChange={(value) => {
+                  updateForm({
+                    sceneLocation: value,
+                    ...(form.characterDescription.trim()
+                      ? {}
+                      : {
+                          characterDescription: buildDefaultCharacterDescription(
+                            form.voiceType,
+                            form.characterType,
+                            value
+                          ),
+                        }),
+                  });
+                }}
                 onScriptChange={(value) => updateForm({ script: value })}
                 onContentToneChange={(value) => updateForm({ contentTone: value })}
                 onVideoGenreChange={(value) => updateForm({ videoGenre: value })}
                 onNumberOfScenesChange={(value) => updateForm({ numberOfScenes: value })}
                 onGenerateScript={handleGenerateScript}
+                onRandomizeScript={handleRandomizeScript}
               />
             </div>
             <div className="reveal-up [animation-delay:190ms]">
@@ -318,7 +529,20 @@ export default function HomePage() {
                 onMotionIntensityChange={(value) => updateForm({ motionIntensity: value })}
                 onTransitionEnabledChange={(value) => updateForm({ transitionEnabled: value })}
                 onSubjectConsistentChange={(value) => updateForm({ subjectConsistent: value })}
-                onVoiceTypeChange={(value) => updateForm({ voiceType: value })}
+                onVoiceTypeChange={(value) =>
+                  updateForm({
+                    voiceType: value,
+                    ...(form.characterDescription.trim()
+                      ? {}
+                      : {
+                          characterDescription: buildDefaultCharacterDescription(
+                            value,
+                            form.characterType,
+                            form.sceneLocation
+                          ),
+                        }),
+                  })
+                }
                 onLanguageChange={(value) => updateForm({ language: value })}
                 onReadSpeedChange={(value) => updateForm({ readSpeed: value })}
                 onBgMusicEnabledChange={(value) => updateForm({ bgMusicEnabled: value })}
@@ -348,6 +572,9 @@ export default function HomePage() {
               durationSeconds={form.durationSeconds}
               voiceType={form.voiceType}
               visualStyle={form.visualStyle}
+              sampleImageUrl={sampleImageUrl}
+              sampleImageName={sampleImageName}
+              onSampleImageChange={handleSampleImageChange}
               generationStatus={previewStatus}
               videoUrl={videoUrl}
             />
