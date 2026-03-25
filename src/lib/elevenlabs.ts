@@ -77,22 +77,7 @@ export async function generateVoiceOverWithElevenLabs(
   const client = new ElevenLabsClient({ apiKey });
   const voiceId = getVoiceIdByType(input.settings.voiceType);
   const speed = normalizeReadSpeed(input.settings.readSpeed);
-  const convert = client.textToSpeech.convert as (
-    voiceId: string,
-    request: {
-      text: string;
-      modelId: string;
-      voiceSettings: {
-        speed: number;
-        stability: number;
-        similarityBoost: number;
-        style: number;
-        useSpeakerBoost: boolean;
-      };
-    }
-  ) => Promise<unknown>;
-
-  const audio = await convert(voiceId, {
+  const audio = await client.textToSpeech.convert(voiceId, {
     text: input.text,
     modelId: "eleven_multilingual_v2",
     voiceSettings: {

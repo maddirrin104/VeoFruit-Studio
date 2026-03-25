@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     const {
       topic,
       characterDescription = "",
-      characterType = "Nữ bán trái cây xinh tươi",
+      characterType = "Nữ tư vấn viên cửa hàng trái cây",
       sceneLocation = "Cửa hàng trái cây",
       voiceType = "Nữ",
       videoGenre = "Giới thiệu trong cửa hàng",
@@ -141,17 +141,33 @@ function buildDefaultCharacterDescription(
   characterType: string,
   sceneLocation: string
 ): string {
+  if (characterType.includes("3D")) {
+    return `Nhân vật 3D tại ${sceneLocation}, biểu cảm rõ ràng, lời dẫn ngắn gọn, nhịp nói linh hoạt và năng lượng tích cực.`;
+  }
+
+  if (characterType.includes("Đầu bếp")) {
+    return `Đầu bếp tại ${sceneLocation}, phong thái chuyên nghiệp, giải thích cách chọn nguyên liệu và gợi ý món ăn thực tế.`;
+  }
+
+  if (characterType.includes("review") || characterType.includes("vlog")) {
+    return `Người sáng tạo nội dung tại ${sceneLocation}, phong cách tự nhiên, nói chuyện gần gũi, nhấn mạnh trải nghiệm thực tế.`;
+  }
+
+  if (characterType.includes("Mẹ bỉm")) {
+    return `Phụ huynh trẻ tại ${sceneLocation}, cách nói nhẹ nhàng, tập trung tiêu chí an toàn, dinh dưỡng và dễ áp dụng cho gia đình.`;
+  }
+
+  if (characterType.includes("MC")) {
+    return `MC tại ${sceneLocation}, giọng nói rõ ràng, chuyên nghiệp, truyền tải thông tin mạch lạc và dễ theo dõi.`;
+  }
+
   if (characterType.includes("Nữ") || voiceType === "Nữ") {
-    return `Chị bán trái cây xinh tươi tại ${sceneLocation}, nụ cười thân thiện, giọng nói ngọt ngào.`;
+    return `Nữ tư vấn viên tại ${sceneLocation}, tác phong chuyên nghiệp, giao tiếp thân thiện, giới thiệu điểm nổi bật của từng loại trái cây.`;
   }
 
   if (characterType.includes("Nam") || voiceType === "Nam") {
-    return `Anh bán trái cây dễ thương tại ${sceneLocation}, hiền lành, lịch sự và tư vấn rõ ràng.`;
+    return `Nam tư vấn viên tại ${sceneLocation}, phong thái điềm tĩnh, tư vấn rõ ràng, nhấn mạnh độ tươi, hương vị và cách bảo quản.`;
   }
 
-  if (characterType.includes("3D")) {
-    return `Nhân vật 3D hoạt hình tại ${sceneLocation}, biểu cảm sinh động, giọng điệu vui tươi.`;
-  }
-
-  return `Nhân vật thân thiện tại ${sceneLocation}, phong cách gần gũi và tự nhiên.`;
+  return `Nhân vật giới thiệu tại ${sceneLocation}, phong cách gần gũi, diễn đạt mạch lạc và tập trung vào thông tin hữu ích cho người mua.`;
 }

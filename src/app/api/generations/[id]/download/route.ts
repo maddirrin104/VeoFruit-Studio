@@ -1,20 +1,110 @@
+import { spawn } from "node:child_process";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { NextResponse } from "next/server";
+import ffmpegPath from "ffmpeg-static";
 import { prisma } from "@/lib/prisma";
+
+type GenerationDownloadRecord = {
+  id: string;
+  status: string | null;
+  outputUrl: string | null;
+  voiceSettings: unknown;
+};
+
+function extractAudioUrl(voiceSettings: unknown): string | null {
+  if (!voiceSettings || typeof voiceSettings !== "object") {
+    return null;
+  }
+
+  const settings = voiceSettings as Record<string, unknown>;
+  return typeof settings.audioUrl === "string" ? settings.audioUrl : null;
+}
+
+async function downloadToFile(url: string, filePath: string): Promise<void> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch media: ${response.status} ${response.statusText}`);
+  }
+
+  const data = Buffer.from(await response.arrayBuffer());
+  await fs.writeFile(filePath, data);
+}
+
+async function materializeAudioInput(audioUrl: string, audioInputPath: string): Promise<void> {
+  if (audioUrl.startsWith("/")) {
+    const localPath = path.join(process.cwd(), "public", audioUrl.replace(/^\//, ""));
+    await fs.copyFile(localPath, audioInputPath);
+    return;
+  }
+
+  await downloadToFile(audioUrl, audioInputPath);
+}
+
+async function muxVideoWithAudio(
+  videoInputPath: string,
+  audioInputPath: string,
+  outputPath: string
+): Promise<void> {
+  const ffmpegBinary = ffmpegPath ?? undefined;
+  if (!ffmpegBinary) {
+    throw new Error("ffmpeg binary is not available");
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const args = [
+      "-y",
+      "-i",
+      videoInputPath,
+      "-i",
+      audioInputPath,
+      "-map",
+      "0:v:0",
+      "-map",
+      "1:a:0",
+      "-c:v",
+      "copy",
+      "-c:a",
+      "aac",
+      "-shortest",
+      outputPath,
+    ];
+
+    const ffmpeg = spawn(ffmpegBinary, args, { windowsHide: true });
+    let stderr = "";
+
+    ffmpeg.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+
+    ffmpeg.on("error", (error: Error) => {
+      reject(error);
+    });
+
+    ffmpeg.on("close", (code: number | null) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(new Error(`ffmpeg exited with code ${code}. ${stderr}`));
+    });
+  });
+}
 
 export async function GET(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
+  let tempDir: string | null = null;
+
   try {
     const { id: generationId } = await context.params;
 
     const generation = (await prisma.videoGeneration.findUnique({
       where: { id: generationId },
-    })) as {
-      id: string;
-      status: string | null;
-      outputUrl: string | null;
-    } | null;
+    })) as GenerationDownloadRecord | null;
 
     if (!generation) {
       return NextResponse.json(
@@ -30,23 +120,30 @@ export async function GET(
       );
     }
 
-    const upstream = await fetch(generation.outputUrl);
-
-    if (!upstream.ok || !upstream.body) {
+    const audioUrl = extractAudioUrl(generation.voiceSettings);
+    if (!audioUrl) {
       return NextResponse.json(
-        { error: "Failed to fetch generated video" },
-        { status: 502 }
+        { error: "Voice-over audio is not available for this generation" },
+        { status: 400 }
       );
     }
 
-    const contentType = upstream.headers.get("content-type") || "video/mp4";
-    const extension = contentType.includes("webm") ? "webm" : "mp4";
-    const fileName = `veofruit-generation-${generation.id}.${extension}`;
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "veofruit-mux-"));
+    const videoInputPath = path.join(tempDir, "video-input.mp4");
+    const audioInputPath = path.join(tempDir, "audio-input.mp3");
+    const outputPath = path.join(tempDir, "video-with-audio.mp4");
 
-    return new NextResponse(upstream.body, {
+    await downloadToFile(generation.outputUrl, videoInputPath);
+    await materializeAudioInput(audioUrl, audioInputPath);
+    await muxVideoWithAudio(videoInputPath, audioInputPath, outputPath);
+
+    const mergedVideo = await fs.readFile(outputPath);
+    const fileName = `veofruit-generation-${generation.id}-with-audio.mp4`;
+
+    return new NextResponse(mergedVideo, {
       status: 200,
       headers: {
-        "Content-Type": contentType,
+        "Content-Type": "video/mp4",
         "Content-Disposition": `attachment; filename="${fileName}"`,
         "Cache-Control": "no-store",
       },
@@ -54,8 +151,12 @@ export async function GET(
   } catch (error) {
     console.error("GET /api/generations/[id]/download error:", error);
     return NextResponse.json(
-      { error: "Failed to download video" },
+      { error: "Failed to download video with audio" },
       { status: 500 }
     );
+  } finally {
+    if (tempDir) {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   }
 }

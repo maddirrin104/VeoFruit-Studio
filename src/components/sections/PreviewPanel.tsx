@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useRef } from "react";
 import Image from "next/image";
 import {
   Download,
@@ -43,6 +44,56 @@ export function PreviewPanel({
   const canPreviewVideo = generationStatus === "completed" && Boolean(videoUrl);
   const canDownloadVideo =
     generationStatus === "completed" && Boolean(videoUrl) && Boolean(generationId);
+  const voiceOverAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const syncAudioToVideoTime = useCallback((videoEl: HTMLVideoElement) => {
+    const audioEl = voiceOverAudioRef.current;
+    if (!audioEl || !audioUrl) {
+      return;
+    }
+
+    const drift = Math.abs((audioEl.currentTime || 0) - (videoEl.currentTime || 0));
+    if (drift > 0.2) {
+      audioEl.currentTime = videoEl.currentTime;
+    }
+  }, [audioUrl]);
+
+  const handleVideoPlay = useCallback(async (event: React.SyntheticEvent<HTMLVideoElement>) => {
+    const videoEl = event.currentTarget;
+    const audioEl = voiceOverAudioRef.current;
+
+    if (!audioEl || !audioUrl) {
+      return;
+    }
+
+    audioEl.playbackRate = videoEl.playbackRate;
+    syncAudioToVideoTime(videoEl);
+
+    try {
+      await audioEl.play();
+    } catch {
+      // Ignore autoplay restrictions; user can still use the separate audio control below.
+    }
+  }, [audioUrl, syncAudioToVideoTime]);
+
+  const handleVideoPause = useCallback(() => {
+    const audioEl = voiceOverAudioRef.current;
+    if (audioEl && !audioEl.paused) {
+      audioEl.pause();
+    }
+  }, []);
+
+  const handleVideoRateChange = useCallback((event: React.SyntheticEvent<HTMLVideoElement>) => {
+    const videoEl = event.currentTarget;
+    const audioEl = voiceOverAudioRef.current;
+    if (audioEl) {
+      audioEl.playbackRate = videoEl.playbackRate;
+    }
+  }, []);
+
+  const handleVideoSeeked = useCallback((event: React.SyntheticEvent<HTMLVideoElement>) => {
+    syncAudioToVideoTime(event.currentTarget);
+  }, [syncAudioToVideoTime]);
 
   return (
     <div className="space-y-3 xl:sticky xl:top-5 xl:self-start">
@@ -68,6 +119,12 @@ export function PreviewPanel({
                 playsInline
                 preload="metadata"
                 className="h-full w-full object-cover"
+                onPlay={handleVideoPlay}
+                onPause={handleVideoPause}
+                onRateChange={handleVideoRateChange}
+                onSeeked={handleVideoSeeked}
+                onTimeUpdate={handleVideoSeeked}
+                onEnded={handleVideoPause}
               >
                 Trình duyệt không hỗ trợ phát video.
               </video>
@@ -125,7 +182,7 @@ export function PreviewPanel({
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#4a7e65]">
               Voice-over AI
             </p>
-            <audio controls preload="none" className="w-full">
+            <audio ref={voiceOverAudioRef} controls preload="none" className="w-full">
               <source src={audioUrl} type="audio/mpeg" />
               Trình duyệt không hỗ trợ phát âm thanh.
             </audio>

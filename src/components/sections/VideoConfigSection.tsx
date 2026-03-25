@@ -33,6 +33,19 @@ export function VideoConfigSection({
   onAspectRatioChange,
   onDurationSecondsChange,
 }: VideoConfigSectionProps) {
+  const aspectRatioOptions: Array<{
+    ratio: "9:16" | "1:1" | "16:9" | "4:5";
+    label: string;
+  }> = [
+    { ratio: "9:16", label: "9:16 - TikTok, Reels, Shorts" },
+    { ratio: "1:1", label: "1:1 - Instagram Feed, Facebook Post" },
+    { ratio: "16:9", label: "16:9 - YouTube, TV, Website" },
+    { ratio: "4:5", label: "4:5 - Instagram Feed (chiem dien tich lon)" },
+  ];
+
+  const selectedAspectRatioLabel =
+    aspectRatioOptions.find((option) => option.ratio === aspectRatio)?.label ??
+    aspectRatio;
 
   return (
     <Card className="p-6 md:p-7">
@@ -77,14 +90,17 @@ export function VideoConfigSection({
           <div className="space-y-3">
             <FieldLabel>Tỷ lệ khung hình</FieldLabel>
             <SelectField
-              value={aspectRatio}
-              onChange={(value) => onAspectRatioChange(value as "9:16" | "1:1" | "16:9" | "4:5")}
-              options={[
-                "9:16",
-                "1:1",
-                "16:9",
-                "4:5",
-              ]}
+              value={selectedAspectRatioLabel}
+              onChange={(value) => {
+                const selected = aspectRatioOptions.find(
+                  (option) => option.label === value
+                );
+
+                if (selected) {
+                  onAspectRatioChange(selected.ratio);
+                }
+              }}
+              options={aspectRatioOptions.map((option) => option.label)}
             />
           </div>
 
