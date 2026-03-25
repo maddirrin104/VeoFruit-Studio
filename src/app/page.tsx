@@ -492,33 +492,29 @@ export default function HomePage() {
                 onCharacterTypeChange={(value) => {
                   updateForm({
                     characterType: value,
-                    ...(form.characterDescription.trim()
-                      ? {}
-                      : {
-                          characterDescription: buildDefaultCharacterDescription(
-                            value.includes("Nữ")
-                              ? "Nữ"
-                              : value.includes("Nam")
-                              ? "Nam"
-                              : form.voiceType,
-                            value,
-                            form.sceneLocation
-                          ),
-                        }),
+                    characterDescription: buildDefaultCharacterDescription(
+                      value.includes("Nữ")
+                        ? "Nữ"
+                        : value.includes("Nam")
+                        ? "Nam"
+                        : form.voiceType,
+                      value,
+                      form.sceneLocation
+                    ),
                   });
                 }}
                 onSceneLocationChange={(value) => {
                   updateForm({
                     sceneLocation: value,
-                    ...(form.characterDescription.trim()
-                      ? {}
-                      : {
-                          characterDescription: buildDefaultCharacterDescription(
-                            form.voiceType,
-                            form.characterType,
-                            value
-                          ),
-                        }),
+                    characterDescription: buildDefaultCharacterDescription(
+                      form.characterType.includes("Nữ")
+                        ? "Nữ"
+                        : form.characterType.includes("Nam")
+                        ? "Nam"
+                        : form.voiceType,
+                      form.characterType,
+                      value
+                    ),
                   });
                 }}
                 onScriptChange={(value) => updateForm({ script: value })}
