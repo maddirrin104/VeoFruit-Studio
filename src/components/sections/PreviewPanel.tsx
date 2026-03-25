@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import {
+  Download,
   ImagePlus,
   Monitor,
   Play,
@@ -20,6 +21,8 @@ type PreviewPanelProps = {
   onSampleImageChange: (file: File | null) => void;
   generationStatus?: "idle" | "pending" | "processing" | "completed" | "failed";
   videoUrl?: string;
+  audioUrl?: string;
+  generationId?: string;
 };
 
 export function PreviewPanel({
@@ -34,8 +37,12 @@ export function PreviewPanel({
   onSampleImageChange,
   generationStatus = "idle",
   videoUrl,
+  audioUrl,
+  generationId,
 }: PreviewPanelProps) {
   const canPreviewVideo = generationStatus === "completed" && Boolean(videoUrl);
+  const canDownloadVideo =
+    generationStatus === "completed" && Boolean(videoUrl) && Boolean(generationId);
 
   return (
     <div className="space-y-3 xl:sticky xl:top-5 xl:self-start">
@@ -82,14 +89,47 @@ export function PreviewPanel({
         </div>
 
         {canPreviewVideo ? (
-          <a
-            href={videoUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-3 inline-flex text-xs font-semibold text-[#0f8f4e] hover:underline"
-          >
-            Mở video ở tab mới
-          </a>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <a
+              href={videoUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex text-xs font-semibold text-[#0f8f4e] hover:underline"
+            >
+              Mở video ở tab mới
+            </a>
+
+            {canDownloadVideo ? (
+              <a
+                href={`/api/generations/${generationId}/download`}
+                className="inline-flex items-center gap-1 rounded-lg border border-[#8ed0ad] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#1b6e48] transition hover:border-[#67c193]"
+              >
+                <Download className="size-3.5" />
+                Tải video
+              </a>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="inline-flex cursor-not-allowed items-center gap-1 rounded-lg border border-[#cdded4] bg-[#f1f5f2] px-2.5 py-1.5 text-xs font-semibold text-[#89a496]"
+              >
+                <Download className="size-3.5" />
+                Tải video
+              </button>
+            )}
+          </div>
+        ) : null}
+
+        {audioUrl ? (
+          <div className="mt-3 rounded-xl border border-[#b4ddc5] bg-[#eff9f3] p-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#4a7e65]">
+              Voice-over AI
+            </p>
+            <audio controls preload="none" className="w-full">
+              <source src={audioUrl} type="audio/mpeg" />
+              Trình duyệt không hỗ trợ phát âm thanh.
+            </audio>
+          </div>
         ) : null}
 
         <div className="mt-4 space-y-2 rounded-xl border border-dashed border-[#b4ddc5] bg-[#eff9f3] p-3">

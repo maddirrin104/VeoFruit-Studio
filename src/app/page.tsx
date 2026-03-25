@@ -124,6 +124,7 @@ export default function HomePage() {
   const [generationId, setGenerationId] = useState<string | null>(null);
   const [generationStatus, setGenerationStatus] = useState<GenerationState>("idle");
   const [videoUrl, setVideoUrl] = useState<string | undefined>(undefined);
+  const [audioUrl, setAudioUrl] = useState<string | undefined>(undefined);
   const [sampleImageUrl, setSampleImageUrl] = useState<string | undefined>(undefined);
   const [sampleImageName, setSampleImageName] = useState<string | undefined>(undefined);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -325,6 +326,8 @@ export default function HomePage() {
         script: form.script,
         characterDescription: form.characterDescription,
         contentTone: form.contentTone,
+        videoGenre: form.videoGenre,
+        sceneLocation: form.sceneLocation,
         videoConfig: {
           resolution: form.resolution,
           aiModel: form.aiModel,
@@ -349,6 +352,7 @@ export default function HomePage() {
       setGenerationId(generation.id);
       setGenerationStatus(generation.status as GenerationState);
       setVideoUrl(undefined);
+      setAudioUrl(undefined);
     } catch (error) {
       setErrorMessage((error as Error).message);
       setIsGeneratingVideo(false);
@@ -371,6 +375,7 @@ export default function HomePage() {
         const status = statusData.status as GenerationState;
         setGenerationStatus(status);
         setVideoUrl(statusData.videoUrl);
+        setAudioUrl(statusData.audioUrl);
 
         if (status === "failed") {
           setErrorMessage(
@@ -425,6 +430,7 @@ export default function HomePage() {
     setGenerationId(null);
     setGenerationStatus("idle");
     setVideoUrl(undefined);
+    setAudioUrl(undefined);
     setSampleImageName(undefined);
     setSampleImageUrl((currentUrl) => {
       if (currentUrl) {
@@ -577,6 +583,8 @@ export default function HomePage() {
               onSampleImageChange={handleSampleImageChange}
               generationStatus={previewStatus}
               videoUrl={videoUrl}
+              audioUrl={audioUrl}
+              generationId={generationId ?? undefined}
             />
           </div>
         </div>

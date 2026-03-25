@@ -30,6 +30,7 @@ type GenerationRecord = {
   status: "pending" | "processing" | "completed" | "failed";
   progress: number;
   videoUrl?: string;
+  audioUrl?: string;
   errorMessage?: string;
   createdAt: string;
   updatedAt?: string;
@@ -92,6 +93,31 @@ export async function createGeneration(
   payload: CreateGenerationRequest
 ): Promise<GenerationRecord> {
   return http<GenerationRecord>("/api/generations", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function generateAudio(payload: {
+  script?: string;
+  storyTopic?: string;
+  contentTone?: string;
+  videoGenre?: string;
+  sceneLocation?: string;
+  durationSeconds?: number;
+  audioConfig: AudioConfigInput;
+}): Promise<{
+  audioUrl: string;
+  narrationText: string;
+  narrationWords: number;
+  estimatedDurationSeconds: number;
+}> {
+  return http<{
+    audioUrl: string;
+    narrationText: string;
+    narrationWords: number;
+    estimatedDurationSeconds: number;
+  }>("/api/ai/generate-audio", {
     method: "POST",
     body: JSON.stringify(payload),
   });

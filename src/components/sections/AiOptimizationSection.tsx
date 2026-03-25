@@ -86,7 +86,23 @@ export function AiOptimizationSection({
               <SelectField
                 value={emotionStyle}
                 onChange={onEmotionStyleChange}
-                options={["Vật tươi", "Năng lượng", "Sang trọng", "Tự nhiên"]}
+                options={[
+                  "Vật tươi",
+                  "Năng lượng",
+                  "Sang trọng",
+                  "Tự nhiên",
+                  "Ấm áp",
+                  "Vui nhộn",
+                  "Thanh lịch",
+                  "Tinh tế",
+                  "Truyền cảm hứng",
+                  "Thân thiện",
+                  "Mộc mạc",
+                  "Sôi động",
+                  "Yên bình",
+                  "Cao cấp",
+                  "Tươi mát mùa hè",
+                ]}
               />
             </div>
 
@@ -95,7 +111,24 @@ export function AiOptimizationSection({
               <SelectField
                 value={visualStyle}
                 onChange={onVisualStyleChange}
-                options={["Cinematic", "Realistic", "Dreamy", "Lifestyle"]}
+                options={[
+                  "Cinematic",
+                  "Realistic",
+                  "Dreamy",
+                  "Lifestyle",
+                  "Documentary",
+                  "Commercial",
+                  "Minimalist",
+                  "Vintage Film",
+                  "Food Photography",
+                  "Ultra Macro",
+                  "Studio Lighting",
+                  "Street Market",
+                  "Natural Light",
+                  "Moody",
+                  "Color Pop",
+                  "Soft Pastel",
+                ]}
               />
             </div>
 

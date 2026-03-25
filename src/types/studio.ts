@@ -55,6 +55,8 @@ export interface CreateGenerationRequest {
   script?: string;
   characterDescription?: string;
   contentTone?: string;
+  videoGenre?: string;
+  sceneLocation?: string;
   videoConfig: VideoConfigInput;
   imageConfig: ImageConfigInput;
   audioConfig: AudioConfigInput;
@@ -66,6 +68,7 @@ export interface GenerationStatus {
   status: "pending" | "processing" | "completed" | "failed";
   progress: number;
   videoUrl?: string;
+  audioUrl?: string;
   errorMessage?: string;
   createdAt: string;
   updatedAt: string;

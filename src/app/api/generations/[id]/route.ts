@@ -34,6 +34,16 @@ export async function GET(
         ? generation.thumbnailUrl.slice("error:".length)
         : null;
 
+    const voiceSettings =
+      generation?.voiceSettings && typeof generation.voiceSettings === "object"
+        ? (generation.voiceSettings as Record<string, unknown>)
+        : null;
+
+    const audioUrl =
+      voiceSettings && typeof voiceSettings.audioUrl === "string"
+        ? voiceSettings.audioUrl
+        : undefined;
+
     return NextResponse.json({
       data: {
         id: generation.id,
@@ -41,6 +51,7 @@ export async function GET(
         status: generation?.status || "pending",
         progress: 0,
         videoUrl: generation?.outputUrl,
+        audioUrl,
         errorMessage: persistedError,
         estimatedTimeRemaining: `${Math.ceil(estimatedRemaining)}s`,
         createdAt: generation.createdAt,

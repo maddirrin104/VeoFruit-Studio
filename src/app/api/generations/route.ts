@@ -1,12 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { buildVideoPrompt } from "@/lib/veo3";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import {
   RunwayGenerationError,
   generateVideoWithRunway,
   mapAspectRatioToRunwayRatio,
 } from "@/lib/runway";
+import {
+  buildAudioFileName,
+  generateVoiceOverWithElevenLabs,
+  isElevenLabsConfigured,
+} from "@/lib/elevenlabs";
+import {
+  buildNarrationText,
+  estimateNarrationDurationSeconds,
+} from "@/lib/audio-narration";
 import { CreateGenerationRequest } from "@/types/studio";
+
+const AUDIO_OUTPUT_DIR = path.join(process.cwd(), "public", "generated-audio");
+
+async function persistAudio(buffer: Buffer, fileName: string): Promise<string> {
+  await fs.mkdir(AUDIO_OUTPUT_DIR, { recursive: true });
+  const filePath = path.join(AUDIO_OUTPUT_DIR, fileName);
+  await fs.writeFile(filePath, buffer);
+  return `/generated-audio/${fileName}`;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,6 +38,8 @@ export async function POST(request: NextRequest) {
       script: body.script,
       characterDescription: body.characterDescription,
       contentTone: body.contentTone,
+      videoGenre: body.videoGenre,
+      sceneLocation: body.sceneLocation,
     };
 
     // Verify project exists and fetch its details
@@ -66,6 +88,7 @@ export async function POST(request: NextRequest) {
       project,
       videoConfig,
       imageConfig,
+      audioConfig,
       promptContext
     ).catch((error) => {
       console.error(
@@ -122,6 +145,10 @@ export async function GET(request: NextRequest) {
       videoConfig: null,
       imageConfig: null,
       audioConfig: null,
+      audioUrl:
+        gen?.voiceSettings && typeof gen.voiceSettings?.audioUrl === "string"
+          ? gen.voiceSettings.audioUrl
+          : undefined,
     }));
 
     return NextResponse.json({
@@ -149,11 +176,19 @@ async function generateVideoInBackground(
   project: any,
   videoConfig: any,
   imageConfig: any,
+  audioConfig: {
+    voiceGender: "Nam" | "Nữ" | "Trung tính AI";
+    language: string;
+    readSpeed: number;
+    bgMusicEnabled: boolean;
+  },
   promptContext: {
     storyTopic?: string;
     script?: string;
     characterDescription?: string;
     contentTone?: string;
+    videoGenre?: string;
+    sceneLocation?: string;
   }
 ) {
   try {
@@ -184,12 +219,70 @@ async function generateVideoInBackground(
       durationSeconds: videoConfig.durationSeconds,
     });
 
+    let voiceSettings: Record<string, unknown> = {
+      ...audioConfig,
+      provider: "elevenlabs",
+      status: "skipped",
+      reason: "ELEVENLABS_API_KEY is not configured",
+    };
+
+    if (isElevenLabsConfigured()) {
+      try {
+        const narrationText = buildNarrationText({
+          script: promptContext.script,
+          storyTopic: promptContext.storyTopic,
+          contentTone: promptContext.contentTone,
+          videoGenre: promptContext.videoGenre,
+          sceneLocation: promptContext.sceneLocation,
+          durationSeconds: videoConfig.durationSeconds,
+          language: audioConfig.language,
+          readSpeed: audioConfig.readSpeed,
+        });
+
+        const audioBuffer = await generateVoiceOverWithElevenLabs({
+          text: narrationText,
+          settings: {
+            voiceType: audioConfig.voiceGender,
+            language: audioConfig.language,
+            readSpeed: audioConfig.readSpeed,
+          },
+        });
+
+        const audioFileName = buildAudioFileName(`gen-${generationId}`);
+        const audioUrl = await persistAudio(audioBuffer, audioFileName);
+
+        voiceSettings = {
+          ...audioConfig,
+          provider: "elevenlabs",
+          status: "completed",
+          audioUrl,
+          narrationText,
+          estimatedDurationSeconds: estimateNarrationDurationSeconds(
+            narrationText,
+            audioConfig.language,
+            audioConfig.readSpeed
+          ),
+        };
+      } catch (audioError) {
+        console.error(`[Generation ${generationId}] Voice-over failed:`, audioError);
+        voiceSettings = {
+          ...audioConfig,
+          provider: "elevenlabs",
+          status: "failed",
+          error:
+            (audioError as Error)?.message ||
+            "Không thể tạo voice-over tự động. Video vẫn được tạo thành công.",
+        };
+      }
+    }
+
     // Update generation with success
     await (prisma.videoGeneration.update as any)({
       where: { id: generationId },
       data: {
         status: "completed",
         outputUrl: result.videoUrl,
+        voiceSettings,
       },
     });
 
