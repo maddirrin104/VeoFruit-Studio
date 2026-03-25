@@ -28,7 +28,7 @@ type SelectFieldProps = {
   defaultValue?: string;
   value?: string;
   onChange?: (value: string) => void;
-  options: string[];
+  options: Array<string | { label: string; value: string }>;
 };
 
 export function SelectField({
@@ -37,6 +37,12 @@ export function SelectField({
   onChange,
   options,
 }: SelectFieldProps) {
+  const normalizedOptions = options.map((option) =>
+    typeof option === "string"
+      ? { label: option, value: option }
+      : { label: option.label, value: option.value }
+  );
+
   const selectProps =
     value !== undefined
       ? { value }
@@ -51,9 +57,13 @@ export function SelectField({
         onChange={(event) => onChange?.(event.target.value)}
         className={`${baseFieldClass} appearance-none pr-11`}
       >
-        {options.map((option) => (
-          <option key={option} value={option} className="bg-[#e6f5eb] text-[#1e4f3c]">
-            {option}
+        {normalizedOptions.map((option) => (
+          <option
+            key={option.value}
+            value={option.value}
+            className="bg-[#e6f5eb] text-[#1e4f3c]"
+          >
+            {option.label}
           </option>
         ))}
       </select>

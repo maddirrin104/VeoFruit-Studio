@@ -143,16 +143,72 @@ export function buildVideoPrompt(
   otherDetails?: Record<string, any>
 ): string {
   const intensityLevel =
-    motionIntensity < 33 ? "slow and calm" : motionIntensity < 67 ? "moderate" : "dynamic and fast-paced";
+    motionIntensity < 33
+      ? "slow and calm"
+      : motionIntensity < 67
+      ? "moderate"
+      : "dynamic and fast-paced";
 
-  return `
-${script}
+  const cameraMovement =
+    motionIntensity < 33
+      ? "minimal camera movement, stable framing"
+      : motionIntensity < 67
+      ? "balanced camera movement with gentle push-ins"
+      : "energetic camera movement with quick but controlled reframing";
 
-Visual Style: ${visualStyle}
-Emotional Tone: ${emotionStyle}
-Motion: ${intensityLevel} movements
-${otherDetails?.characterDescription ? `Character: ${otherDetails.characterDescription}` : ""}
-${otherDetails?.contentTone ? `Content Tone: ${otherDetails.contentTone}` : ""}
-Quality: Professional, high-quality video
-  `.trim();
+  const transitionGuidance = otherDetails?.transitionEnabled
+    ? "smooth transitions between shots"
+    : "hard cuts only, no transition effects";
+
+  const subjectConsistencyGuidance = otherDetails?.subjectConsistent
+    ? "keep the same main subject identity and appearance consistent across all shots"
+    : "subject consistency can vary naturally between shots";
+
+  const cappedCharacterDescription =
+    typeof otherDetails?.characterDescription === "string"
+      ? otherDetails.characterDescription.trim().slice(0, 220)
+      : "";
+
+  // Keep style directives first so they survive provider-side prompt trimming.
+  const directionBlock = [
+    "Create a professional fruit product video.",
+    `Visual style: ${visualStyle}.`,
+    `Emotional tone: ${emotionStyle}.`,
+    `Motion level: ${intensityLevel}; ${cameraMovement}.`,
+    `Editing direction: ${transitionGuidance}.`,
+    `Continuity direction: ${subjectConsistencyGuidance}.`,
+    otherDetails?.videoGenre ? `Genre: ${otherDetails.videoGenre}.` : "",
+    otherDetails?.sceneLocation ? `Scene location: ${otherDetails.sceneLocation}.` : "",
+    cappedCharacterDescription ? `Character direction: ${cappedCharacterDescription}.` : "",
+    otherDetails?.contentTone ? `Content tone: ${otherDetails.contentTone}.` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  // Narrative constraints are explicit so script/character choices are not ignored.
+  const narrativeBlock = [
+    "Narrative requirements (must follow):",
+    otherDetails?.storyTopic ? `- Main topic: ${otherDetails.storyTopic}.` : "",
+    otherDetails?.characterType ? `- Character type: ${otherDetails.characterType}.` : "",
+    cappedCharacterDescription ? `- Character persona: ${cappedCharacterDescription}.` : "",
+    otherDetails?.contentTone ? `- Dialogue tone: ${otherDetails.contentTone}.` : "",
+    otherDetails?.videoGenre ? `- Genre framing: ${otherDetails.videoGenre}.` : "",
+    otherDetails?.sceneLocation ? `- Primary location: ${otherDetails.sceneLocation}.` : "",
+    otherDetails?.numberOfScenes
+      ? `- Target structure: approximately ${otherDetails.numberOfScenes} scenes.`
+      : "",
+    "- Respect the script flow and key talking points below.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  // Reserve room for style controls by capping script payload before outer truncation.
+  const normalizedScript = script.replace(/\s+/g, " ").trim();
+  const maxScriptChars = 560;
+  const scriptExcerpt =
+    normalizedScript.length > maxScriptChars
+      ? `${normalizedScript.slice(0, 360)} ... ${normalizedScript.slice(-180)}`
+      : normalizedScript;
+
+  return `${directionBlock}\n\n${narrativeBlock}\n\nScript context:\n${scriptExcerpt}`.trim();
 }

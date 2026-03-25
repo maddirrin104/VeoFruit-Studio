@@ -54,9 +54,11 @@ export interface CreateGenerationRequest {
   storyTopic?: string;
   script?: string;
   characterDescription?: string;
+  characterType?: string;
   contentTone?: string;
   videoGenre?: string;
   sceneLocation?: string;
+  numberOfScenes?: number;
   videoConfig: VideoConfigInput;
   imageConfig: ImageConfigInput;
   audioConfig: AudioConfigInput;

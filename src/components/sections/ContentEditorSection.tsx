@@ -28,6 +28,8 @@ const topicTypes = [
   "Cảm hứng tích cực",
 ];
 
+const CHARACTER_DESCRIPTION_MAX_LENGTH = 220;
+
 type ContentEditorSectionProps = {
   storyTopic: string;
   characterDescription: string;
@@ -148,11 +150,21 @@ export function ContentEditorSection({
 
           <div className="space-y-2">
             <FieldLabel>Mô tả nhân vật chính</FieldLabel>
-            <TextInput
+            <TextArea
+              rows={3}
+              maxLength={CHARACTER_DESCRIPTION_MAX_LENGTH}
+              className="min-h-[96px] resize-y"
               placeholder="VD: Tư vấn viên chuyên nghiệp, nói rõ ràng, thân thiện và gần gũi..."
               value={characterDescription}
-              onChange={(event) => onCharacterDescriptionChange(event.target.value)}
+              onChange={(event) =>
+                onCharacterDescriptionChange(
+                  event.target.value.slice(0, CHARACTER_DESCRIPTION_MAX_LENGTH)
+                )
+              }
             />
+            <p className="text-right text-xs text-[#5f8f79]">
+              {characterDescription.length}/{CHARACTER_DESCRIPTION_MAX_LENGTH} ký tự
+            </p>
           </div>
 
           <div className="space-y-2">

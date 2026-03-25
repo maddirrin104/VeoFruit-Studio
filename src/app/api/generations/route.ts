@@ -37,9 +37,11 @@ export async function POST(request: NextRequest) {
       storyTopic: body.storyTopic,
       script: body.script,
       characterDescription: body.characterDescription,
+      characterType: body.characterType,
       contentTone: body.contentTone,
       videoGenre: body.videoGenre,
       sceneLocation: body.sceneLocation,
+      numberOfScenes: body.numberOfScenes,
     };
 
     // Verify project exists and fetch its details
@@ -186,9 +188,11 @@ async function generateVideoInBackground(
     storyTopic?: string;
     script?: string;
     characterDescription?: string;
+    characterType?: string;
     contentTone?: string;
     videoGenre?: string;
     sceneLocation?: string;
+    numberOfScenes?: number;
   }
 ) {
   try {
@@ -205,8 +209,15 @@ async function generateVideoInBackground(
       imageConfig.visualStyle,
       imageConfig.motionIntensity,
       {
+        storyTopic: promptContext.storyTopic || project.storyTopic,
         characterDescription: promptContext.characterDescription,
+        characterType: promptContext.characterType,
         contentTone: promptContext.contentTone,
+        videoGenre: promptContext.videoGenre,
+        sceneLocation: promptContext.sceneLocation,
+        numberOfScenes: promptContext.numberOfScenes,
+        transitionEnabled: imageConfig.transitionEnabled,
+        subjectConsistent: imageConfig.subjectConsistent,
       }
     );
 

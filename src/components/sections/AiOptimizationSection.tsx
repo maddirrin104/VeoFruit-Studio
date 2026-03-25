@@ -112,22 +112,28 @@ export function AiOptimizationSection({
                 value={visualStyle}
                 onChange={onVisualStyleChange}
                 options={[
-                  "Cinematic",
-                  "Realistic",
-                  "Dreamy",
-                  "Lifestyle",
-                  "Documentary",
-                  "Commercial",
-                  "Minimalist",
-                  "Vintage Film",
-                  "Food Photography",
-                  "Ultra Macro",
-                  "Studio Lighting",
-                  "Street Market",
-                  "Natural Light",
-                  "Moody",
-                  "Color Pop",
-                  "Soft Pastel",
+                  { label: "Cinematic - Điện ảnh", value: "Cinematic" },
+                  { label: "Realistic - Chân thực", value: "Realistic" },
+                  { label: "Dreamy - Mơ màng", value: "Dreamy" },
+                  { label: "Lifestyle - Đời sống", value: "Lifestyle" },
+                  { label: "Documentary - Tài liệu", value: "Documentary" },
+                  { label: "Commercial - Quảng cáo", value: "Commercial" },
+                  { label: "Minimalist - Tối giản", value: "Minimalist" },
+                  { label: "Vintage Film - Phim cổ điển", value: "Vintage Film" },
+                  {
+                    label: "Food Photography - Nhiếp ảnh ẩm thực",
+                    value: "Food Photography",
+                  },
+                  { label: "Ultra Macro - Cận siêu chi tiết", value: "Ultra Macro" },
+                  {
+                    label: "Studio Lighting - Ánh sáng studio",
+                    value: "Studio Lighting",
+                  },
+                  { label: "Street Market - Chợ đường phố", value: "Street Market" },
+                  { label: "Natural Light - Ánh sáng tự nhiên", value: "Natural Light" },
+                  { label: "Moody - Tâm trạng", value: "Moody" },
+                  { label: "Color Pop - Màu sắc nổi bật", value: "Color Pop" },
+                  { label: "Soft Pastel - Màu pastel nhẹ", value: "Soft Pastel" },
                 ]}
               />
             </div>
