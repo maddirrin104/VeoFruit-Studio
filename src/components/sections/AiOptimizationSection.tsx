@@ -21,6 +21,7 @@ type AiOptimizationSectionProps = {
   motionIntensity: number;
   transitionEnabled: boolean;
   subjectConsistent: boolean;
+  narrationMode: "script_read_along" | "separate_voiceover";
   voiceType: "Nam" | "Nữ" | "Trung tính AI";
   language: string;
   readSpeed: number;
@@ -31,6 +32,7 @@ type AiOptimizationSectionProps = {
   onMotionIntensityChange: (value: number) => void;
   onTransitionEnabledChange: (value: boolean) => void;
   onSubjectConsistentChange: (value: boolean) => void;
+  onNarrationModeChange: (value: "script_read_along" | "separate_voiceover") => void;
   onVoiceTypeChange: (value: "Nam" | "Nữ" | "Trung tính AI") => void;
   onLanguageChange: (value: string) => void;
   onReadSpeedChange: (value: number) => void;
@@ -53,6 +55,7 @@ export function AiOptimizationSection({
   motionIntensity,
   transitionEnabled,
   subjectConsistent,
+  narrationMode,
   voiceType,
   language,
   readSpeed,
@@ -63,6 +66,7 @@ export function AiOptimizationSection({
   onMotionIntensityChange,
   onTransitionEnabledChange,
   onSubjectConsistentChange,
+  onNarrationModeChange,
   onVoiceTypeChange,
   onLanguageChange,
   onReadSpeedChange,
@@ -180,6 +184,26 @@ export function AiOptimizationSection({
           />
 
           <div className="space-y-5">
+            <div className="space-y-2">
+              <FieldLabel>Chế độ lồng tiếng</FieldLabel>
+              <SelectField
+                value={narrationMode}
+                onChange={(value) =>
+                  onNarrationModeChange(value as "script_read_along" | "separate_voiceover")
+                }
+                options={[
+                  {
+                    label: "Đọc theo kịch bản (không tạo voice-over riêng)",
+                    value: "script_read_along",
+                  },
+                  {
+                    label: "Lồng tiếng riêng (AI âm thanh riêng)",
+                    value: "separate_voiceover",
+                  },
+                ]}
+              />
+            </div>
+
             <div className="space-y-2">
               <FieldLabel>Kiểu giọng</FieldLabel>
               <SelectField

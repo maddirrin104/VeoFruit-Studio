@@ -33,6 +33,7 @@ export interface RunwayVideoRequest {
   ratio: RunwayRatio;
   durationSeconds?: number;
   model?: "gen4.5";
+  promptImageUrl?: string;
 }
 
 export interface RunwayVideoResponse {
@@ -117,16 +118,27 @@ export async function generateVideoWithRunway(
   const model = request.model ?? "gen4.5";
   const duration = normalizeDurationSeconds(request.durationSeconds);
   const promptText = normalizePromptText(request.prompt);
+  const promptImageUrl = request.promptImageUrl?.trim();
 
   try {
-    const task = await client.textToVideo
-      .create({
-        model,
-        promptText,
-        ratio: request.ratio,
-        duration,
-      })
-      .waitForTaskOutput({ timeout: 10 * 60 * 1000 });
+    const task = promptImageUrl
+      ? await client.imageToVideo
+          .create({
+            model,
+            promptText,
+            promptImage: promptImageUrl,
+            ratio: request.ratio,
+            duration,
+          })
+          .waitForTaskOutput({ timeout: 10 * 60 * 1000 })
+      : await client.textToVideo
+          .create({
+            model,
+            promptText,
+            ratio: request.ratio,
+            duration,
+          })
+          .waitForTaskOutput({ timeout: 10 * 60 * 1000 });
 
     const videoUrl = task.output?.[0];
     if (!videoUrl) {

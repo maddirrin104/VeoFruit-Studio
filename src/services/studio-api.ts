@@ -98,6 +98,32 @@ export async function createGeneration(
   });
 }
 
+export async function uploadSampleImage(file: File): Promise<{
+  url: string;
+  absoluteUrl: string;
+  fileName: string;
+}> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch("/api/uploads/image", {
+    method: "POST",
+    body: formData,
+  });
+
+  const json = (await response.json()) as ApiResponse<{
+    url: string;
+    absoluteUrl: string;
+    fileName: string;
+  }>;
+
+  if (!response.ok || !json.data) {
+    throw new Error(json.error || `Image upload failed: ${response.status}`);
+  }
+
+  return json.data;
+}
+
 export async function generateAudio(payload: {
   script?: string;
   storyTopic?: string;

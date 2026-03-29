@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AiOptimizationSection } from "@/components/sections/AiOptimizationSection";
 import { ContentEditorSection } from "@/components/sections/ContentEditorSection";
 import { PreviewPanel } from "@/components/sections/PreviewPanel";
@@ -12,6 +12,7 @@ import {
   createProject,
   generateScript,
   getGeneration,
+  uploadSampleImage,
   updateProject,
 } from "@/services/studio-api";
 
@@ -72,6 +73,15 @@ const VIDEO_GENRES = [
 
 function pickRandom<T>(items: readonly T[]): T {
   return items[Math.floor(Math.random() * items.length)];
+}
+
+function normalizeWebImageUrl(url?: string): string | undefined {
+  const trimmed = url?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return /^https:\/\//i.test(trimmed) ? trimmed : undefined;
 }
 
 function buildDefaultCharacterDescription(
@@ -138,6 +148,7 @@ const DEFAULT_FORM = {
   motionIntensity: 50,
   transitionEnabled: true,
   subjectConsistent: true,
+  narrationMode: "separate_voiceover" as "script_read_along" | "separate_voiceover",
   voiceType: "Nam" as "Nam" | "Nữ" | "Trung tính AI",
   language: "Tiếng Việt",
   readSpeed: 50,
@@ -157,7 +168,13 @@ export default function HomePage() {
   const [audioUrl, setAudioUrl] = useState<string | undefined>(undefined);
   const [sampleImageUrl, setSampleImageUrl] = useState<string | undefined>(undefined);
   const [sampleImageName, setSampleImageName] = useState<string | undefined>(undefined);
+  const [uploadedSampleImageUrl, setUploadedSampleImageUrl] = useState<string | undefined>(
+    undefined
+  );
+  const [referenceImageUrl, setReferenceImageUrl] = useState<string | undefined>(undefined);
+  const [isUploadingSampleImage, setIsUploadingSampleImage] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const sampleImageUploadTokenRef = useRef(0);
 
   const updateForm = useCallback((partial: Partial<typeof DEFAULT_FORM>) => {
     setForm((prev) => ({ ...prev, ...partial }));
@@ -208,6 +225,7 @@ export default function HomePage() {
           subjectConsistent: form.subjectConsistent,
         },
         audioConfig: {
+          narrationMode: form.narrationMode,
           voiceGender: form.voiceType,
           language: form.language,
           readSpeed: form.readSpeed,
@@ -340,6 +358,18 @@ export default function HomePage() {
         throw new Error("Vui lòng nhập hoặc tạo kịch bản trước khi tạo video.");
       }
 
+      if (isUploadingSampleImage) {
+        throw new Error("Ảnh mẫu đang được tải lên. Vui lòng đợi trong giây lát.");
+      }
+
+      const hasManualReferenceUrl = Boolean(referenceImageUrl?.trim());
+      const webReferenceImageUrl = normalizeWebImageUrl(referenceImageUrl);
+      if (hasManualReferenceUrl && !webReferenceImageUrl) {
+        throw new Error("URL ảnh phải là link web HTTPS (ví dụ: https://example.com/image.jpg).");
+      }
+
+      const uploadedWebImageUrl = normalizeWebImageUrl(uploadedSampleImageUrl);
+
       await updateProject(pid, {
         title: form.title,
         storyTopic: form.storyTopic,
@@ -372,8 +402,11 @@ export default function HomePage() {
           motionIntensity: form.motionIntensity,
           transitionEnabled: form.transitionEnabled,
           subjectConsistent: form.subjectConsistent,
+          referenceImageUrl: webReferenceImageUrl ?? uploadedWebImageUrl,
+          referenceImageName: sampleImageName,
         },
         audioConfig: {
+          narrationMode: form.narrationMode,
           voiceGender: form.voiceType,
           language: form.language,
           readSpeed: form.readSpeed,
@@ -389,7 +422,14 @@ export default function HomePage() {
       setErrorMessage((error as Error).message);
       setIsGeneratingVideo(false);
     }
-  }, [ensureProject, form]);
+  }, [
+    ensureProject,
+    form,
+    isUploadingSampleImage,
+    sampleImageName,
+    referenceImageUrl,
+    uploadedSampleImageUrl,
+  ]);
 
   useEffect(() => {
     if (!generationId) {
@@ -437,8 +477,9 @@ export default function HomePage() {
 
   const previewStatus = useMemo<GenerationState>(() => generationStatus, [generationStatus]);
 
-  const handleSampleImageChange = useCallback((file: File | null) => {
+  const handleSampleImageChange = useCallback(async (file: File | null) => {
     setSampleImageName(file?.name);
+    setErrorMessage(null);
 
     setSampleImageUrl((currentUrl) => {
       if (currentUrl) {
@@ -447,6 +488,37 @@ export default function HomePage() {
 
       return file ? URL.createObjectURL(file) : undefined;
     });
+
+    if (!file) {
+      sampleImageUploadTokenRef.current += 1;
+      setUploadedSampleImageUrl(undefined);
+      setIsUploadingSampleImage(false);
+      return;
+    }
+
+    const uploadToken = sampleImageUploadTokenRef.current + 1;
+    sampleImageUploadTokenRef.current = uploadToken;
+    setIsUploadingSampleImage(true);
+
+    try {
+      const uploadResult = await uploadSampleImage(file);
+      if (sampleImageUploadTokenRef.current !== uploadToken) {
+        return;
+      }
+
+      setUploadedSampleImageUrl(uploadResult.absoluteUrl);
+    } catch (error) {
+      if (sampleImageUploadTokenRef.current !== uploadToken) {
+        return;
+      }
+
+      setUploadedSampleImageUrl(undefined);
+      setErrorMessage((error as Error).message);
+    } finally {
+      if (sampleImageUploadTokenRef.current === uploadToken) {
+        setIsUploadingSampleImage(false);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -457,12 +529,20 @@ export default function HomePage() {
     };
   }, [sampleImageUrl]);
 
+  const handleReferenceImageUrlChange = useCallback((url: string) => {
+    setReferenceImageUrl(url.trim() || undefined);
+  }, []);
+
   const handleReset = useCallback(() => {
     setForm(DEFAULT_FORM);
     setGenerationId(null);
     setGenerationStatus("idle");
     setVideoUrl(undefined);
     setAudioUrl(undefined);
+    sampleImageUploadTokenRef.current += 1;
+    setIsUploadingSampleImage(false);
+    setUploadedSampleImageUrl(undefined);
+    setReferenceImageUrl(undefined);
     setSampleImageName(undefined);
     setSampleImageUrl((currentUrl) => {
       if (currentUrl) {
@@ -553,6 +633,7 @@ export default function HomePage() {
                 motionIntensity={form.motionIntensity}
                 transitionEnabled={form.transitionEnabled}
                 subjectConsistent={form.subjectConsistent}
+                narrationMode={form.narrationMode}
                 voiceType={form.voiceType}
                 language={form.language}
                 readSpeed={form.readSpeed}
@@ -563,6 +644,7 @@ export default function HomePage() {
                 onMotionIntensityChange={(value) => updateForm({ motionIntensity: value })}
                 onTransitionEnabledChange={(value) => updateForm({ transitionEnabled: value })}
                 onSubjectConsistentChange={(value) => updateForm({ subjectConsistent: value })}
+                onNarrationModeChange={(value) => updateForm({ narrationMode: value })}
                 onVoiceTypeChange={(value) =>
                   updateForm({
                     voiceType: value,
@@ -609,6 +691,10 @@ export default function HomePage() {
               sampleImageUrl={sampleImageUrl}
               sampleImageName={sampleImageName}
               onSampleImageChange={handleSampleImageChange}
+              isSampleImageUploading={isUploadingSampleImage}
+              sampleImageReady={Boolean(uploadedSampleImageUrl)}
+              referenceImageUrl={referenceImageUrl}
+              onReferenceImageUrlChange={handleReferenceImageUrlChange}
               generationStatus={previewStatus}
               videoUrl={videoUrl}
               audioUrl={audioUrl}

@@ -42,15 +42,59 @@ async function materializeAudioInput(audioUrl: string, audioInputPath: string): 
   await downloadToFile(audioUrl, audioInputPath);
 }
 
+function normalizeRootAliasPath(inputPath: string): string {
+  if (!inputPath) {
+    return inputPath;
+  }
+
+  // Next server runtime may return paths like /ROOT/node_modules/... from bundled modules.
+  if (/^[\\/]+ROOT[\\/]/i.test(inputPath)) {
+    return path.join(process.cwd(), inputPath.replace(/^[\\/]+ROOT[\\/]?/i, ""));
+  }
+
+  return inputPath;
+}
+
+async function canAccessFile(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveFfmpegBinary(): Promise<string> {
+  const candidates: string[] = [];
+
+  if (ffmpegPath) {
+    candidates.push(ffmpegPath);
+    candidates.push(normalizeRootAliasPath(ffmpegPath));
+  }
+
+  const platformBinary = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+  candidates.push(path.join(process.cwd(), "node_modules", "ffmpeg-static", platformBinary));
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+
+    if (await canAccessFile(candidate)) {
+      return candidate;
+    }
+  }
+
+  // Final fallback to system PATH if ffmpeg is installed globally.
+  return "ffmpeg";
+}
+
 async function muxVideoWithAudio(
   videoInputPath: string,
   audioInputPath: string,
   outputPath: string
 ): Promise<void> {
-  const ffmpegBinary = ffmpegPath ?? undefined;
-  if (!ffmpegBinary) {
-    throw new Error("ffmpeg binary is not available");
-  }
+  const ffmpegBinary = await resolveFfmpegBinary();
 
   await new Promise<void>((resolve, reject) => {
     const args = [

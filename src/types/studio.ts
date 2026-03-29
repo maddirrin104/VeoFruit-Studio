@@ -24,9 +24,12 @@ export interface ImageConfigInput {
   motionIntensity: number;
   transitionEnabled: boolean;
   subjectConsistent: boolean;
+  referenceImageUrl?: string;
+  referenceImageName?: string;
 }
 
 export interface AudioConfigInput {
+  narrationMode: "script_read_along" | "separate_voiceover";
   voiceGender: "Nam" | "Nữ" | "Trung tính AI";
   language: string;
   readSpeed: number;

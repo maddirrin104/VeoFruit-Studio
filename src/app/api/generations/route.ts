@@ -179,6 +179,7 @@ async function generateVideoInBackground(
   videoConfig: any,
   imageConfig: any,
   audioConfig: {
+    narrationMode?: "script_read_along" | "separate_voiceover";
     voiceGender: "Nam" | "Nữ" | "Trung tính AI";
     language: string;
     readSpeed: number;
@@ -221,23 +222,52 @@ async function generateVideoInBackground(
       }
     );
 
-    console.log(`[Generation ${generationId}] Starting Runway video generation...`);
+    const referenceImageUrl =
+      typeof imageConfig?.referenceImageUrl === "string" &&
+      imageConfig.referenceImageUrl.trim().length > 0
+        ? imageConfig.referenceImageUrl.trim()
+        : undefined;
+
+    console.log(
+      `[Generation ${generationId}] Starting Runway video generation${referenceImageUrl ? " (image-to-video mode)" : ""}...`
+    );
 
     const result = await generateVideoWithRunway({
       prompt,
       model: "gen4.5",
       ratio: mapAspectRatioToRunwayRatio(videoConfig.aspectRatio),
       durationSeconds: videoConfig.durationSeconds,
+      promptImageUrl: referenceImageUrl,
     });
+
+    const narrationMode =
+      audioConfig?.narrationMode === "script_read_along"
+        ? "script_read_along"
+        : "separate_voiceover";
 
     let voiceSettings: Record<string, unknown> = {
       ...audioConfig,
       provider: "elevenlabs",
+      narrationMode,
       status: "skipped",
-      reason: "ELEVENLABS_API_KEY is not configured",
     };
 
-    if (isElevenLabsConfigured()) {
+    if (narrationMode === "script_read_along") {
+      voiceSettings = {
+        ...voiceSettings,
+        provider: "runway-script",
+        status: "skipped",
+        reason: "Đang dùng chế độ đọc theo kịch bản, không tạo voice-over riêng.",
+      };
+    } else if (!isElevenLabsConfigured()) {
+      voiceSettings = {
+        ...voiceSettings,
+        status: "skipped",
+        reason: "ELEVENLABS_API_KEY is not configured",
+      };
+    }
+
+    if (narrationMode === "separate_voiceover" && isElevenLabsConfigured()) {
       try {
         const narrationText = buildNarrationText({
           script: promptContext.script,

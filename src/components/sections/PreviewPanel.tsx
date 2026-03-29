@@ -20,6 +20,10 @@ type PreviewPanelProps = {
   sampleImageUrl?: string;
   sampleImageName?: string;
   onSampleImageChange: (file: File | null) => void;
+  isSampleImageUploading?: boolean;
+  sampleImageReady?: boolean;
+  referenceImageUrl?: string;
+  onReferenceImageUrlChange?: (url: string) => void;
   generationStatus?: "idle" | "pending" | "processing" | "completed" | "failed";
   videoUrl?: string;
   audioUrl?: string;
@@ -36,6 +40,10 @@ export function PreviewPanel({
   sampleImageUrl,
   sampleImageName,
   onSampleImageChange,
+  isSampleImageUploading = false,
+  sampleImageReady = false,
+  referenceImageUrl,
+  onReferenceImageUrlChange,
   generationStatus = "idle",
   videoUrl,
   audioUrl,
@@ -189,37 +197,78 @@ export function PreviewPanel({
           </div>
         ) : null}
 
-        <div className="mt-4 space-y-2 rounded-xl border border-dashed border-[#b4ddc5] bg-[#eff9f3] p-3">
+        <div className="mt-4 space-y-3 rounded-xl border border-dashed border-[#b4ddc5] bg-[#eff9f3] p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-[#4a7e65]">
             Ảnh sản phẩm mẫu (tùy chọn)
           </p>
 
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#8ed0ad] bg-white px-3 py-2 text-xs font-semibold text-[#1b6e48] transition hover:border-[#67c193]">
-            <ImagePlus className="size-4" />
-            Tải ảnh mẫu
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(event) => onSampleImageChange(event.target.files?.[0] ?? null)}
-            />
-          </label>
-
-          {sampleImageUrl ? (
-            <div className="overflow-hidden rounded-lg border border-[#a8d8bc] bg-white">
-              <Image
-                src={sampleImageUrl}
-                alt="Ảnh sản phẩm mẫu"
-                width={400}
-                height={160}
-                unoptimized
-                className="h-24 w-full object-cover"
+          {/* Option 1: Upload file */}
+          <div className="space-y-2">
+            <p className="text-xs text-[#5f8f79]">Tùy chọn 1: Tải từ máy tính</p>
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#8ed0ad] bg-white px-3 py-2 text-xs font-semibold text-[#1b6e48] transition hover:border-[#67c193]">
+              <ImagePlus className="size-4" />
+              Tải ảnh mẫu
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => {
+                  onSampleImageChange(event.target.files?.[0] ?? null);
+                  onReferenceImageUrlChange?.("");
+                }}
               />
-              <p className="truncate px-3 py-2 text-xs text-[#3f6f5a]">{sampleImageName}</p>
+            </label>
+
+            {sampleImageUrl ? (
+              <div className="overflow-hidden rounded-lg border border-[#a8d8bc] bg-white">
+                <Image
+                  src={sampleImageUrl}
+                  alt="Ảnh sản phẩm mẫu"
+                  width={400}
+                  height={160}
+                  unoptimized
+                  className="h-24 w-full object-cover"
+                />
+                <p className="truncate px-3 py-2 text-xs text-[#3f6f5a]">{sampleImageName}</p>
+              </div>
+            ) : null}
+
+            {isSampleImageUploading ? (
+              <p className="text-xs text-[#3f7a60]">Đang tải ảnh lên máy chủ...</p>
+            ) : sampleImageReady ? (
+              <p className="text-xs text-[#1e6f4a]">✓ Ảnh đã sẵn sàng từ file upload.</p>
+            ) : sampleImageUrl ? (
+              <p className="text-xs text-[#5f8f79]">Ảnh chỉ để xem trước cho đến khi tải lên hoàn tất.</p>
+            ) : null}
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-[#a8dfbf]"></div>
+
+          {/* Option 2: Direct HTTPS URL */}
+          <div className="space-y-2">
+            <p className="text-xs text-[#5f8f79]">Tùy chọn 2: Nhập URL ảnh từ web (HTTPS)</p>
+            <div>
+              <input
+                type="text"
+                placeholder="https://example.com/image.jpg"
+                value={referenceImageUrl ? String(referenceImageUrl) : ""}
+                onChange={(e) => {
+                  const newVal = e.target.value;
+                  if (onReferenceImageUrlChange) {
+                    onReferenceImageUrlChange(newVal);
+                  }
+                  if (newVal.trim()) {
+                    onSampleImageChange(null);
+                  }
+                }}
+                className="w-full rounded-lg border border-[#8ed0ad] bg-white px-3 py-2 text-xs font-semibold text-[#0a4a2e] placeholder-[#a8dfbf] focus:outline-none focus:ring-2 focus:ring-[#10b862]"
+              />
             </div>
-          ) : (
-            <p className="text-xs text-[#5f8f79]">Chưa chọn ảnh mẫu.</p>
-          )}
+            {referenceImageUrl ? (
+              <p className="text-xs text-[#1e6f4a]">✓ URL ảnh sẵn sàng để tạo video.</p>
+            ) : null}
+          </div>
         </div>
       </Card>
 
