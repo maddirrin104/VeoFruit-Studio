@@ -9,7 +9,7 @@ export interface NarrationContextInput {
   readSpeed: number;
 }
 
-function pickLinesFromScript(script: string): string[] {
+export function extractDialogueLinesFromScript(script: string): string[] {
   const dialogueLines = script
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -64,19 +64,12 @@ function limitNarrationLength(text: string, targetWords: number): string {
 
 export function buildNarrationText(context: NarrationContextInput): string {
   const script = context.script?.trim() || "";
-  const scriptLines = script ? pickLinesFromScript(script) : [];
+  const scriptLines = script ? extractDialogueLinesFromScript(script) : [];
   const raw = scriptLines.join(" ").trim();
 
-  const contextSeed = [
-    context.storyTopic ? `Hôm nay chúng ta cùng khám phá ${context.storyTopic}.` : "",
-    context.videoGenre ? `Theo phong cách ${context.videoGenre.toLowerCase()}.` : "",
-    context.sceneLocation ? `Bối cảnh tại ${context.sceneLocation.toLowerCase()}.` : "",
-    context.contentTone ? `Tông nội dung ${context.contentTone.toLowerCase()}.` : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  const combined = normalizeSpacing(`${contextSeed} ${raw}`);
+  // When script dialogue exists, keep narration text strictly aligned with script lines
+  // so on-screen lip movement has a better chance to match generated audio.
+  const combined = normalizeSpacing(raw);
   const fallback = normalizeSpacing(
     `Hôm nay chúng tôi giới thiệu ${context.storyTopic || "sản phẩm trái cây tươi"} với phong cách tự nhiên và gần gũi.`
   );

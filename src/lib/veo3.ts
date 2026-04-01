@@ -227,6 +227,11 @@ export function buildVideoPrompt(
       ? otherDetails.characterDescription.trim().slice(0, 220)
       : "";
 
+  const narrationGuide =
+    typeof otherDetails?.narrationGuide === "string"
+      ? otherDetails.narrationGuide.replace(/\s+/g, " ").trim().slice(0, 420)
+      : "";
+
   // Keep style directives first so they survive provider-side prompt trimming.
   const directionBlock = [
     "Create a professional fruit product video.",
@@ -262,6 +267,7 @@ export function buildVideoPrompt(
       ? "- Maintain continuous on-screen presence of the anchored product in all scenes while character actions progress the story."
       : "",
     "- If there is a conflict, prioritize script narrative for scene composition and action, while preserving product look similarity from reference image only.",
+    narrationGuide ? "- Keep character mouth movement synchronized with the exact spoken narration lines below." : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -274,5 +280,9 @@ export function buildVideoPrompt(
       ? `${normalizedScript.slice(0, 360)} ... ${normalizedScript.slice(-180)}`
       : normalizedScript;
 
-  return `${directionBlock}\n\n${narrativeBlock}\n\nScript context:\n${scriptExcerpt}`.trim();
+  const spokenLinesBlock = narrationGuide
+    ? `Spoken narration lines (exact words to align lip movement):\n${narrationGuide}`
+    : "";
+
+  return `${directionBlock}\n\n${narrativeBlock}\n\nScript context:\n${scriptExcerpt}${spokenLinesBlock ? `\n\n${spokenLinesBlock}` : ""}`.trim();
 }

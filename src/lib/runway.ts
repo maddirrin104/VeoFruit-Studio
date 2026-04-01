@@ -125,6 +125,17 @@ function normalizeRunwayError(error: unknown): RunwayGenerationError {
   );
 }
 
+function shouldFallbackToTextOnly(error: unknown): boolean {
+  const message = (error as Error)?.message || "";
+  const lowered = message.toLowerCase();
+
+  return (
+    lowered.includes("promptimage") ||
+    lowered.includes("timeout while fetching asset") ||
+    lowered.includes("invalid_union")
+  );
+}
+
 export async function generateVideoWithRunway(
   request: RunwayVideoRequest
 ): Promise<RunwayVideoResponse> {
@@ -134,17 +145,26 @@ export async function generateVideoWithRunway(
   const promptImageUrl = request.promptImageUrl?.trim();
 
   try {
-    const task = promptImageUrl
-      ? await client.imageToVideo
+    let task;
+
+    if (promptImageUrl) {
+      try {
+        task = await client.imageToVideo
           .create({
             model,
             promptText,
-            promptImage: [{ uri: promptImageUrl, position: "first" }],
+            promptImage: promptImageUrl,
             ratio: request.ratio,
             duration,
           })
-          .waitForTaskOutput({ timeout: 10 * 60 * 1000 })
-      : await client.textToVideo
+          .waitForTaskOutput({ timeout: 10 * 60 * 1000 });
+      } catch (imageError) {
+        if (!shouldFallbackToTextOnly(imageError)) {
+          throw imageError;
+        }
+
+        console.warn("[Runway] image-to-video failed; fallback to text-to-video:", imageError);
+        task = await client.textToVideo
           .create({
             model,
             promptText,
@@ -152,6 +172,17 @@ export async function generateVideoWithRunway(
             duration,
           })
           .waitForTaskOutput({ timeout: 10 * 60 * 1000 });
+      }
+    } else {
+      task = await client.textToVideo
+        .create({
+          model,
+          promptText,
+          ratio: request.ratio,
+          duration,
+        })
+        .waitForTaskOutput({ timeout: 10 * 60 * 1000 });
+    }
 
     const videoUrl = task.output?.[0];
     if (!videoUrl) {

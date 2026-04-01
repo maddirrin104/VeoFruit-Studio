@@ -52,7 +52,9 @@ function getFptVoiceByType(voiceType: VoiceType): string {
 
 function normalizeReadSpeedForFpt(readSpeed: number): string {
   const clamped = Math.min(100, Math.max(0, Number.isFinite(readSpeed) ? readSpeed : 50));
-  const mapped = ((clamped - 50) / 50) * 3;
+  // Keep mapping conservative; FPT speed header is very sensitive and large values make
+  // speech unnaturally fast (e.g. 10s script sounding ~5s).
+  const mapped = ((clamped - 50) / 50) * 1.2;
   return mapped.toFixed(1);
 }
 

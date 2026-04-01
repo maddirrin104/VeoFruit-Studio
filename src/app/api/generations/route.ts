@@ -230,6 +230,17 @@ async function generateVideoInBackground(
       ? true
       : Boolean(imageConfig.subjectConsistent);
 
+    const narrationTextForSync = buildNarrationText({
+      script: promptContext.script,
+      storyTopic: promptContext.storyTopic,
+      contentTone: promptContext.contentTone,
+      videoGenre: promptContext.videoGenre,
+      sceneLocation: promptContext.sceneLocation,
+      durationSeconds: videoConfig.durationSeconds,
+      language: audioConfig.language,
+      readSpeed: audioConfig.readSpeed,
+    });
+
     // Build the prompt from script and config
     const prompt = buildVideoPrompt(
       promptContext.script || promptContext.storyTopic || project.storyTopic || "Fruit product video",
@@ -249,6 +260,7 @@ async function generateVideoInBackground(
         hasReferenceImage,
         referenceImageSource,
         referenceImageName,
+        narrationGuide: narrationTextForSync,
       }
     );
 
@@ -297,19 +309,8 @@ async function generateVideoInBackground(
           outputFormat: audioConfig.outputFormat,
         });
 
-        const narrationText = buildNarrationText({
-          script: promptContext.script,
-          storyTopic: promptContext.storyTopic,
-          contentTone: promptContext.contentTone,
-          videoGenre: promptContext.videoGenre,
-          sceneLocation: promptContext.sceneLocation,
-          durationSeconds: videoConfig.durationSeconds,
-          language: audioConfig.language,
-          readSpeed: audioConfig.readSpeed,
-        });
-
         const audioBuffer = await generateVoiceOverWithFpt({
-          text: narrationText,
+          text: narrationTextForSync,
           settings: {
             voiceType: audioConfig.voiceGender,
             language: audioConfig.language,
@@ -334,9 +335,9 @@ async function generateVideoInBackground(
           },
           status: "completed",
           audioUrl,
-          narrationText,
+          narrationText: narrationTextForSync,
           estimatedDurationSeconds: estimateNarrationDurationSeconds(
-            narrationText,
+            narrationTextForSync,
             audioConfig.language,
             audioConfig.readSpeed
           ),
