@@ -85,7 +85,7 @@ function normalizeWebImageUrl(url?: string): string | undefined {
 }
 
 function buildDefaultCharacterDescription(
-  voiceType: "Nam" | "Nữ" | "Trung tính AI",
+  voiceType: "Nam" | "Nữ",
   characterType: string,
   sceneLocation: string
 ) {
@@ -149,7 +149,7 @@ const DEFAULT_FORM = {
   transitionEnabled: true,
   subjectConsistent: true,
   narrationMode: "separate_voiceover" as "script_read_along" | "separate_voiceover",
-  voiceType: "Nam" as "Nam" | "Nữ" | "Trung tính AI",
+  voiceType: "Nam" as "Nam" | "Nữ",
   language: "Tiếng Việt",
   readSpeed: 50,
   emotionIntensity: 50,

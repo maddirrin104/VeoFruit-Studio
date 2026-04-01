@@ -21,10 +21,10 @@ Tao file `.env` o thu muc goc du an voi noi dung:
 ```env
 DATABASE_URL="postgresql://postgres:your_password@localhost:5432/veofruit_studio?schema=public"
 RUNWAYML_API_SECRET="your_runway_api_secret"
-ELEVENLABS_API_KEY="your_elevenlabs_api_key"
-ELEVENLABS_VOICE_ID_MALE="JBFqnCBsd6RMkjVDRZzb"
-ELEVENLABS_VOICE_ID_FEMALE="EXAVITQu4vr4xnSDxMaL"
-ELEVENLABS_VOICE_ID_NEUTRAL="onwK4e9ZLuTAKqWW03F9"
+FPT_AI_API_KEY="your_fpt_ai_api_key"
+FPT_AI_TTS_URL="https://api.fpt.ai/hmi/tts/v5"
+FPT_AI_VOICE_FEMALE="banmai"
+FPT_AI_VOICE_MALE="" # optional
 ```
 
 Ban hay doi:
@@ -34,8 +34,9 @@ Ban hay doi:
 - `localhost:5432`: host va port database
 - `veofruit_studio`: ten database
 - `your_runway_api_secret`: API Secret tu RunwayML
-- `your_elevenlabs_api_key`: API key tu ElevenLabs
-- `ELEVENLABS_VOICE_ID_*`: tuy chon, dung de map giọng theo phan UI (Nam/Nu/Trung tinh AI)
+- `your_fpt_ai_api_key`: API key tu FPT AI
+- `FPT_AI_VOICE_FEMALE`: giọng nũ (mac dinh `banmai`)
+- `FPT_AI_VOICE_MALE`: tuy chon, can khi chon giọng Nam tren UI
 
 ## 4. Tao database va ket noi Prisma
 

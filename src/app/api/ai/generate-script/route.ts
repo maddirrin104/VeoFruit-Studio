@@ -5,7 +5,7 @@ interface GenerateScriptRequest {
   characterDescription?: string;
   characterType?: string;
   sceneLocation?: string;
-  voiceType?: "Nam" | "Nữ" | "Trung tính AI";
+  voiceType?: "Nam" | "Nữ";
   videoGenre?: string;
   contentTone?: string;
   numberOfScenes?: number;
@@ -72,7 +72,7 @@ function generateTemplateScript(
   characterDescription: string,
   characterType: string,
   sceneLocation: string,
-  voiceType: "Nam" | "Nữ" | "Trung tính AI",
+  voiceType: "Nam" | "Nữ",
   videoGenre: string,
   tone: string,
   scenes: number
@@ -104,7 +104,7 @@ function generateSceneContent(
   characterDescription: string,
   characterType: string,
   sceneLocation: string,
-  voiceType: "Nam" | "Nữ" | "Trung tính AI",
+  voiceType: "Nam" | "Nữ",
   videoGenre: string,
   tone: string
 ): string {
@@ -117,9 +117,7 @@ function generateSceneContent(
   const narrator =
     inferredVoiceType === "Nữ"
       ? "em"
-      : inferredVoiceType === "Nam"
-      ? "anh"
-      : "mình";
+      : "anh";
   const narratorCap = narrator.charAt(0).toUpperCase() + narrator.slice(1);
   const toneLine = buildToneDialogueLine(tone, {
     topic,
@@ -307,7 +305,7 @@ function normalizeToneKey(value: string): string {
 }
 
 function buildDefaultCharacterDescription(
-  voiceType: "Nam" | "Nữ" | "Trung tính AI",
+  voiceType: "Nam" | "Nữ",
   characterType: string,
   sceneLocation: string
 ): string {

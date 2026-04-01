@@ -3,10 +3,10 @@ import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import {
   buildAudioFileName,
-  generateVoiceOverWithElevenLabs,
-  isElevenLabsConfigured,
+  generateVoiceOverWithFpt,
+  isFptConfigured,
   type VoiceType,
-} from "@/lib/elevenlabs";
+} from "@/lib/fpt-tts";
 import {
   buildNarrationText,
   estimateNarrationDurationSeconds,
@@ -48,9 +48,9 @@ async function persistAudio(buffer: Buffer, fileName: string): Promise<string> {
 
 export async function POST(request: NextRequest) {
   try {
-    if (!isElevenLabsConfigured()) {
+    if (!isFptConfigured()) {
       return NextResponse.json(
-        { error: "ELEVENLABS_API_KEY is not configured" },
+        { error: "FPT_AI_API_KEY is not configured" },
         { status: 400 }
       );
     }
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
       language: body.audioConfig.language,
       readSpeed: body.audioConfig.readSpeed,
     });
-    const buffer = await generateVoiceOverWithElevenLabs({
+    const buffer = await generateVoiceOverWithFpt({
       text: narrationText,
       settings: {
         voiceType: body.audioConfig.voiceGender,
@@ -84,7 +84,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const fileName = buildAudioFileName("voiceover", body.audioConfig.outputFormat);
+    const outputExt = body.audioConfig.outputFormat === "wav" ? "mp3" : body.audioConfig.outputFormat;
+    const fileName = buildAudioFileName("voiceover", outputExt);
     const audioUrl = await persistAudio(buffer, fileName);
     const narrationWords = narrationText.split(" ").filter(Boolean).length;
     const estimatedDurationSeconds = estimateNarrationDurationSeconds(

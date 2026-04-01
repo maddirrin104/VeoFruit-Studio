@@ -31,7 +31,7 @@ export interface ImageConfigInput {
 
 export interface AudioConfigInput {
   narrationMode: "script_read_along" | "separate_voiceover";
-  voiceGender: "Nam" | "Nữ" | "Trung tính AI";
+  voiceGender: "Nam" | "Nữ";
   language: string;
   readSpeed: number;
   emotionIntensity: number;

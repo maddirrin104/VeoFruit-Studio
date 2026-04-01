@@ -75,7 +75,7 @@ export async function generateScript(payload: {
   characterDescription?: string;
   characterType?: string;
   sceneLocation?: string;
-  voiceType?: "Nam" | "Nữ" | "Trung tính AI";
+  voiceType?: "Nam" | "Nữ";
   videoGenre?: string;
   contentTone?: string;
   numberOfScenes?: number;

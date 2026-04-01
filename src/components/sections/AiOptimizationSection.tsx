@@ -22,7 +22,7 @@ type AiOptimizationSectionProps = {
   transitionEnabled: boolean;
   subjectConsistent: boolean;
   narrationMode: "script_read_along" | "separate_voiceover";
-  voiceType: "Nam" | "Nữ" | "Trung tính AI";
+  voiceType: "Nam" | "Nữ";
   language: string;
   readSpeed: number;
   emotionIntensity: number;
@@ -35,7 +35,7 @@ type AiOptimizationSectionProps = {
   onTransitionEnabledChange: (value: boolean) => void;
   onSubjectConsistentChange: (value: boolean) => void;
   onNarrationModeChange: (value: "script_read_along" | "separate_voiceover") => void;
-  onVoiceTypeChange: (value: "Nam" | "Nữ" | "Trung tính AI") => void;
+  onVoiceTypeChange: (value: "Nam" | "Nữ") => void;
   onLanguageChange: (value: string) => void;
   onReadSpeedChange: (value: number) => void;
   onEmotionIntensityChange: (value: number) => void;
@@ -216,8 +216,8 @@ export function AiOptimizationSection({
               <FieldLabel>Kiểu giọng</FieldLabel>
               <SelectField
                 value={voiceType}
-                onChange={(value) => onVoiceTypeChange(value as "Nam" | "Nữ" | "Trung tính AI")}
-                options={["Nam", "Nữ", "Trung tính AI"]}
+                onChange={(value) => onVoiceTypeChange(value as "Nam" | "Nữ")}
+                options={["Nam", "Nữ"]}
               />
             </div>
 

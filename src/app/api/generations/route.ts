@@ -10,11 +10,11 @@ import {
   mapAspectRatioToRunwayRatio,
 } from "@/lib/runway";
 import {
-  buildElevenLabsVoiceDiagnosticConfig,
+  buildFptVoiceDiagnosticConfig,
   buildAudioFileName,
-  generateVoiceOverWithElevenLabs,
-  isElevenLabsConfigured,
-} from "@/lib/elevenlabs";
+  generateVoiceOverWithFpt,
+  isFptConfigured,
+} from "@/lib/fpt-tts";
 import {
   buildNarrationText,
   estimateNarrationDurationSeconds,
@@ -271,25 +271,25 @@ async function generateVideoInBackground(
 
     let voiceSettings: Prisma.InputJsonObject = {
       ...audioConfig,
-      provider: "elevenlabs",
+      provider: "fpt-ai",
       narrationMode,
       status: "skipped",
     };
 
-    if (!isElevenLabsConfigured()) {
+    if (!isFptConfigured()) {
       voiceSettings = {
         ...voiceSettings,
         status: "skipped",
         reason:
           narrationMode === "script_read_along"
-            ? "Chế độ đọc theo kịch bản cần ELEVENLABS_API_KEY để tạo audio tự động."
-            : "ELEVENLABS_API_KEY is not configured",
+            ? "Chế độ đọc theo kịch bản cần FPT_AI_API_KEY để tạo audio tự động."
+            : "FPT_AI_API_KEY is not configured",
       };
     }
 
-    if (isElevenLabsConfigured()) {
+    if (isFptConfigured()) {
       try {
-        const voiceDiagnostic = buildElevenLabsVoiceDiagnosticConfig({
+        const voiceDiagnostic = buildFptVoiceDiagnosticConfig({
           voiceType: audioConfig.voiceGender,
           language: audioConfig.language,
           readSpeed: audioConfig.readSpeed,
@@ -308,7 +308,7 @@ async function generateVideoInBackground(
           readSpeed: audioConfig.readSpeed,
         });
 
-        const audioBuffer = await generateVoiceOverWithElevenLabs({
+        const audioBuffer = await generateVoiceOverWithFpt({
           text: narrationText,
           settings: {
             voiceType: audioConfig.voiceGender,
@@ -319,18 +319,17 @@ async function generateVideoInBackground(
           },
         });
 
-        const audioFileName = buildAudioFileName(`gen-${generationId}`, audioConfig.outputFormat);
+        const outputExt = audioConfig.outputFormat === "wav" ? "mp3" : audioConfig.outputFormat;
+        const audioFileName = buildAudioFileName(`gen-${generationId}`, outputExt);
         const audioUrl = await persistAudio(audioBuffer, audioFileName);
 
         voiceSettings = {
           ...audioConfig,
-          provider: "elevenlabs",
+          provider: "fpt-ai",
           narrationMode,
-          voiceId: voiceDiagnostic.voiceId,
+          voiceId: voiceDiagnostic.voice,
           voiceConfig: {
             speed: voiceDiagnostic.speed,
-            stability: voiceDiagnostic.stability,
-            style: voiceDiagnostic.style,
             outputFormat: voiceDiagnostic.outputFormat,
           },
           status: "completed",
@@ -346,7 +345,7 @@ async function generateVideoInBackground(
         console.error(`[Generation ${generationId}] Voice-over failed:`, audioError);
         voiceSettings = {
           ...audioConfig,
-          provider: "elevenlabs",
+          provider: "fpt-ai",
           narrationMode,
           status: "failed",
           error:
