@@ -68,6 +68,25 @@ export interface Veo3VideoResponse {
   operationId: string;
 }
 
+interface GeneratedVideoFile {
+  uri?: string;
+  name?: string;
+}
+
+interface GeneratedVideo {
+  video?: GeneratedVideoFile;
+}
+
+interface GenerateVideosResponse {
+  generatedVideos?: GeneratedVideo[];
+}
+
+interface VeoVideosOperation {
+  done?: boolean;
+  name?: string;
+  response?: GenerateVideosResponse;
+}
+
 /**
  * Generate video using Veo3.1 model
  * @param prompt The text prompt describing the video
@@ -82,7 +101,14 @@ export async function generateVideoWithVeo3(
     console.log(`[Veo3] Generating video with prompt: ${prompt.substring(0, 100)}...`);
     
     // Start video generation
-    let operation = await (genAI.models as any).generateVideos({
+    const modelsClient = genAI.models as unknown as {
+      generateVideos: (args: { model: string; prompt: string }) => Promise<VeoVideosOperation>;
+    };
+    const operationsClient = genAI.operations as unknown as {
+      getVideosOperation: (args: { operation: VeoVideosOperation }) => Promise<VeoVideosOperation>;
+    };
+
+    let operation = await modelsClient.generateVideos({
       model: "veo-3.1-generate-preview",
       prompt: prompt,
     });
@@ -100,7 +126,7 @@ export async function generateVideoWithVeo3(
       console.log("[Veo3] Waiting for video generation... (polling in 5s)");
       await new Promise((resolve) => setTimeout(resolve, 5000));
 
-      operation = await genAI.operations.getVideosOperation({
+      operation = await operationsClient.getVideosOperation({
         operation: operation,
       });
     }
@@ -117,7 +143,7 @@ export async function generateVideoWithVeo3(
     const videoFile = generatedVideo.video;
 
     // Get download URL or store the video
-    const videoUrl = (videoFile as any).uri || (videoFile as any).name || "video.mp4";
+    const videoUrl = videoFile.uri || videoFile.name || "video.mp4";
 
     console.log(`[Veo3] ✅ Video generated successfully: ${videoUrl}`);
 
@@ -140,7 +166,7 @@ export function buildVideoPrompt(
   emotionStyle: string,
   visualStyle: string,
   motionIntensity: number,
-  otherDetails?: Record<string, any>
+  otherDetails?: Record<string, unknown>
 ): string {
   const intensityLevel =
     motionIntensity < 33
@@ -164,6 +190,38 @@ export function buildVideoPrompt(
     ? "keep the same main subject identity and appearance consistent across all shots"
     : "subject consistency can vary naturally between shots";
 
+  const referenceImageSourceLabel =
+    otherDetails?.referenceImageSource === "url"
+      ? "web URL"
+      : otherDetails?.referenceImageSource === "upload"
+      ? "uploaded file"
+      : "provided image";
+
+  const referenceProductAnchor =
+    typeof otherDetails?.referenceImageName === "string" &&
+    otherDetails.referenceImageName.trim().length > 0
+      ? otherDetails.referenceImageName.trim().replace(/\.[a-z0-9]+$/i, "")
+      : typeof otherDetails?.storyTopic === "string"
+      ? otherDetails.storyTopic.trim()
+      : "the referenced product";
+
+  const referenceImageGuidance = otherDetails?.hasReferenceImage
+    ? [
+        "Reference image rules (must follow):",
+        `- Reference image source: ${referenceImageSourceLabel}.`,
+        `- Product anchor: ${referenceProductAnchor}.`,
+        "- Use the reference image only to match PRODUCT identity (fruit/product type, color, texture, shape).",
+        "- The same anchored product must stay present from beginning to end, not only in the first second.",
+        "- Ensure the anchored product appears clearly in every shot (hero visibility in each scene).",
+        "- Keep product details consistent across all scenes: color tone, texture, size ratio, and recognizable shape.",
+        "- The PRODUCT can look similar to the reference image; all non-product elements must be generated from script context.",
+        "- Do not copy background, camera angle, scene layout, logo, packaging text, watermark, or unrelated objects from the image.",
+        "- Keep the presenter/character and actions aligned with the script in every scene.",
+        "- Follow script progression shot-by-shot; avoid turning the video into a static slideshow of the reference image.",
+        "- Never replace the scripted story with pure product closeups only.",
+      ].join("\n")
+    : "";
+
   const cappedCharacterDescription =
     typeof otherDetails?.characterDescription === "string"
       ? otherDetails.characterDescription.trim().slice(0, 220)
@@ -181,6 +239,7 @@ export function buildVideoPrompt(
     otherDetails?.sceneLocation ? `Scene location: ${otherDetails.sceneLocation}.` : "",
     cappedCharacterDescription ? `Character direction: ${cappedCharacterDescription}.` : "",
     otherDetails?.contentTone ? `Content tone: ${otherDetails.contentTone}.` : "",
+    referenceImageGuidance,
   ]
     .filter(Boolean)
     .join("\n");
@@ -198,6 +257,11 @@ export function buildVideoPrompt(
       ? `- Target structure: approximately ${otherDetails.numberOfScenes} scenes.`
       : "",
     "- Respect the script flow and key talking points below.",
+    "- Keep scene order, narrative intent, and dialogue beats aligned to the script.",
+    otherDetails?.hasReferenceImage
+      ? "- Maintain continuous on-screen presence of the anchored product in all scenes while character actions progress the story."
+      : "",
+    "- If there is a conflict, prioritize script narrative for scene composition and action, while preserving product look similarity from reference image only.",
   ]
     .filter(Boolean)
     .join("\n");

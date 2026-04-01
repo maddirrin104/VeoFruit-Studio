@@ -3,12 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { buildVideoPrompt } from "@/lib/veo3";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { Prisma } from "@prisma/client";
 import {
   RunwayGenerationError,
   generateVideoWithRunway,
   mapAspectRatioToRunwayRatio,
 } from "@/lib/runway";
 import {
+  buildElevenLabsVoiceDiagnosticConfig,
   buildAudioFileName,
   generateVoiceOverWithElevenLabs,
   isElevenLabsConfigured,
@@ -18,6 +20,19 @@ import {
   estimateNarrationDurationSeconds,
 } from "@/lib/audio-narration";
 import { CreateGenerationRequest } from "@/types/studio";
+
+type VideoProjectRecord = NonNullable<
+  Awaited<ReturnType<typeof prisma.videoProject.findUnique>>
+>;
+
+function getAudioUrlFromVoiceSettings(voiceSettings: Prisma.JsonValue | null): string | undefined {
+  if (!voiceSettings || typeof voiceSettings !== "object" || Array.isArray(voiceSettings)) {
+    return undefined;
+  }
+
+  const audioUrl = (voiceSettings as Prisma.JsonObject).audioUrl;
+  return typeof audioUrl === "string" ? audioUrl : undefined;
+}
 
 const AUDIO_OUTPUT_DIR = path.join(process.cwd(), "public", "generated-audio");
 
@@ -47,7 +62,7 @@ export async function POST(request: NextRequest) {
     // Verify project exists and fetch its details
     const project = await prisma.videoProject.findUnique({
       where: { id: projectId },
-    }) as any;
+    });
 
     if (!project) {
       return NextResponse.json(
@@ -82,7 +97,7 @@ export async function POST(request: NextRequest) {
         aspectRatio: videoConfig.aspectRatio,
         durationSeconds: videoConfig.durationSeconds,
       },
-    }) as any;
+    });
 
     // Start video generation in background
     void generateVideoInBackground(
@@ -129,7 +144,7 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") ?? "20");
     const offset = parseInt(searchParams.get("offset") ?? "0");
 
-    const where: any = {};
+    const where: Prisma.VideoGenerationWhereInput = {};
     if (projectId) where.projectId = projectId;
     if (status) where.status = status;
 
@@ -142,15 +157,12 @@ export async function GET(request: NextRequest) {
 
     const total = await prisma.videoGeneration.count({ where });
 
-    const gensWithConfigs = generations.map((gen: any) => ({
+    const gensWithConfigs = generations.map((gen) => ({
       ...gen,
       videoConfig: null,
       imageConfig: null,
       audioConfig: null,
-      audioUrl:
-        gen?.voiceSettings && typeof gen.voiceSettings?.audioUrl === "string"
-          ? gen.voiceSettings.audioUrl
-          : undefined,
+      audioUrl: getAudioUrlFromVoiceSettings(gen.voiceSettings),
     }));
 
     return NextResponse.json({
@@ -175,16 +187,10 @@ export async function GET(request: NextRequest) {
  */
 async function generateVideoInBackground(
   generationId: string,
-  project: any,
-  videoConfig: any,
-  imageConfig: any,
-  audioConfig: {
-    narrationMode?: "script_read_along" | "separate_voiceover";
-    voiceGender: "Nam" | "Nữ" | "Trung tính AI";
-    language: string;
-    readSpeed: number;
-    bgMusicEnabled: boolean;
-  },
+  project: VideoProjectRecord,
+  videoConfig: CreateGenerationRequest["videoConfig"],
+  imageConfig: CreateGenerationRequest["imageConfig"],
+  audioConfig: CreateGenerationRequest["audioConfig"],
   promptContext: {
     storyTopic?: string;
     script?: string;
@@ -198,10 +204,31 @@ async function generateVideoInBackground(
 ) {
   try {
     // Update status to processing
-    await (prisma.videoGeneration.update as any)({
+    await prisma.videoGeneration.update({
       where: { id: generationId },
       data: { status: "processing" },
     });
+
+    const referenceImageUrl =
+      typeof imageConfig?.referenceImageUrl === "string" &&
+      imageConfig.referenceImageUrl.trim().length > 0
+        ? imageConfig.referenceImageUrl.trim()
+        : undefined;
+    const referenceImageSource =
+      imageConfig?.referenceImageSource === "url" ||
+      imageConfig?.referenceImageSource === "upload"
+        ? imageConfig.referenceImageSource
+        : undefined;
+    const referenceImageName =
+      typeof imageConfig?.referenceImageName === "string" &&
+      imageConfig.referenceImageName.trim().length > 0
+        ? imageConfig.referenceImageName.trim()
+        : undefined;
+
+    const hasReferenceImage = Boolean(referenceImageUrl);
+    const effectiveSubjectConsistent = hasReferenceImage
+      ? true
+      : Boolean(imageConfig.subjectConsistent);
 
     // Build the prompt from script and config
     const prompt = buildVideoPrompt(
@@ -218,15 +245,12 @@ async function generateVideoInBackground(
         sceneLocation: promptContext.sceneLocation,
         numberOfScenes: promptContext.numberOfScenes,
         transitionEnabled: imageConfig.transitionEnabled,
-        subjectConsistent: imageConfig.subjectConsistent,
+        subjectConsistent: effectiveSubjectConsistent,
+        hasReferenceImage,
+        referenceImageSource,
+        referenceImageName,
       }
     );
-
-    const referenceImageUrl =
-      typeof imageConfig?.referenceImageUrl === "string" &&
-      imageConfig.referenceImageUrl.trim().length > 0
-        ? imageConfig.referenceImageUrl.trim()
-        : undefined;
 
     console.log(
       `[Generation ${generationId}] Starting Runway video generation${referenceImageUrl ? " (image-to-video mode)" : ""}...`
@@ -245,30 +269,34 @@ async function generateVideoInBackground(
         ? "script_read_along"
         : "separate_voiceover";
 
-    let voiceSettings: Record<string, unknown> = {
+    let voiceSettings: Prisma.InputJsonObject = {
       ...audioConfig,
       provider: "elevenlabs",
       narrationMode,
       status: "skipped",
     };
 
-    if (narrationMode === "script_read_along") {
-      voiceSettings = {
-        ...voiceSettings,
-        provider: "runway-script",
-        status: "skipped",
-        reason: "Đang dùng chế độ đọc theo kịch bản, không tạo voice-over riêng.",
-      };
-    } else if (!isElevenLabsConfigured()) {
+    if (!isElevenLabsConfigured()) {
       voiceSettings = {
         ...voiceSettings,
         status: "skipped",
-        reason: "ELEVENLABS_API_KEY is not configured",
+        reason:
+          narrationMode === "script_read_along"
+            ? "Chế độ đọc theo kịch bản cần ELEVENLABS_API_KEY để tạo audio tự động."
+            : "ELEVENLABS_API_KEY is not configured",
       };
     }
 
-    if (narrationMode === "separate_voiceover" && isElevenLabsConfigured()) {
+    if (isElevenLabsConfigured()) {
       try {
+        const voiceDiagnostic = buildElevenLabsVoiceDiagnosticConfig({
+          voiceType: audioConfig.voiceGender,
+          language: audioConfig.language,
+          readSpeed: audioConfig.readSpeed,
+          emotionIntensity: audioConfig.emotionIntensity,
+          outputFormat: audioConfig.outputFormat,
+        });
+
         const narrationText = buildNarrationText({
           script: promptContext.script,
           storyTopic: promptContext.storyTopic,
@@ -286,15 +314,25 @@ async function generateVideoInBackground(
             voiceType: audioConfig.voiceGender,
             language: audioConfig.language,
             readSpeed: audioConfig.readSpeed,
+            emotionIntensity: audioConfig.emotionIntensity,
+            outputFormat: audioConfig.outputFormat,
           },
         });
 
-        const audioFileName = buildAudioFileName(`gen-${generationId}`);
+        const audioFileName = buildAudioFileName(`gen-${generationId}`, audioConfig.outputFormat);
         const audioUrl = await persistAudio(audioBuffer, audioFileName);
 
         voiceSettings = {
           ...audioConfig,
           provider: "elevenlabs",
+          narrationMode,
+          voiceId: voiceDiagnostic.voiceId,
+          voiceConfig: {
+            speed: voiceDiagnostic.speed,
+            stability: voiceDiagnostic.stability,
+            style: voiceDiagnostic.style,
+            outputFormat: voiceDiagnostic.outputFormat,
+          },
           status: "completed",
           audioUrl,
           narrationText,
@@ -309,6 +347,7 @@ async function generateVideoInBackground(
         voiceSettings = {
           ...audioConfig,
           provider: "elevenlabs",
+          narrationMode,
           status: "failed",
           error:
             (audioError as Error)?.message ||
@@ -318,7 +357,7 @@ async function generateVideoInBackground(
     }
 
     // Update generation with success
-    await (prisma.videoGeneration.update as any)({
+    await prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         status: "completed",
@@ -338,7 +377,7 @@ async function generateVideoInBackground(
         : (error as Error)?.message || fallbackMessage;
 
     // Update generation with error
-    await (prisma.videoGeneration.update as any)({
+    await prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         status: "failed",

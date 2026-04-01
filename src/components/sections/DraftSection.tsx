@@ -1,7 +1,7 @@
 "use client";
 
 import { Save } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Card } from "@/components/ui/Card";
 
 type DraftSectionProps = {
@@ -17,9 +17,9 @@ export function DraftSection({
 }: DraftSectionProps) {
   const isMountedRef = useRef(false);
 
-  const handleSaveDraft = () => {
+  const handleSaveDraft = useCallback(() => {
     onSaveDraft();
-  };
+  }, [onSaveDraft]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -34,7 +34,7 @@ export function DraftSection({
       clearInterval(timer);
       isMountedRef.current = false;
     };
-  }, [onSaveDraft]);
+  }, [handleSaveDraft]);
 
   return (
     <Card className="p-4 md:p-5">

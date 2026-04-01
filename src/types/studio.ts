@@ -26,6 +26,7 @@ export interface ImageConfigInput {
   subjectConsistent: boolean;
   referenceImageUrl?: string;
   referenceImageName?: string;
+  referenceImageSource?: "upload" | "url";
 }
 
 export interface AudioConfigInput {
@@ -33,6 +34,8 @@ export interface AudioConfigInput {
   voiceGender: "Nam" | "Nữ" | "Trung tính AI";
   language: string;
   readSpeed: number;
+  emotionIntensity: number;
+  outputFormat: "mp3" | "wav";
   bgMusicEnabled: boolean;
 }
 

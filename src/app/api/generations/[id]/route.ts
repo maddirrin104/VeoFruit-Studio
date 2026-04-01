@@ -10,7 +10,7 @@ export async function GET(
 
     const generation = await prisma.videoGeneration.findUnique({
       where: { id: generationId },
-    }) as any;
+    });
 
     if (!generation) {
       return NextResponse.json(
@@ -44,6 +44,23 @@ export async function GET(
         ? voiceSettings.audioUrl
         : undefined;
 
+    const voiceTypeApplied =
+      voiceSettings && typeof voiceSettings.voiceGender === "string"
+        ? voiceSettings.voiceGender
+        : undefined;
+
+    const voiceIdApplied =
+      voiceSettings && typeof voiceSettings.voiceId === "string"
+        ? voiceSettings.voiceId
+        : undefined;
+
+    const voiceConfigApplied =
+      voiceSettings &&
+      typeof voiceSettings.voiceConfig === "object" &&
+      voiceSettings.voiceConfig !== null
+        ? voiceSettings.voiceConfig
+        : undefined;
+
     return NextResponse.json({
       data: {
         id: generation.id,
@@ -52,6 +69,9 @@ export async function GET(
         progress: 0,
         videoUrl: generation?.outputUrl,
         audioUrl,
+        voiceTypeApplied,
+        voiceIdApplied,
+        voiceConfigApplied,
         errorMessage: persistedError,
         estimatedTimeRemaining: `${Math.ceil(estimatedRemaining)}s`,
         createdAt: generation.createdAt,

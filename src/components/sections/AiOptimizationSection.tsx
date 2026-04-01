@@ -25,6 +25,8 @@ type AiOptimizationSectionProps = {
   voiceType: "Nam" | "Nữ" | "Trung tính AI";
   language: string;
   readSpeed: number;
+  emotionIntensity: number;
+  outputFormat: "mp3" | "wav";
   bgMusicEnabled: boolean;
   isGeneratingVideo: boolean;
   onEmotionStyleChange: (value: string) => void;
@@ -36,6 +38,8 @@ type AiOptimizationSectionProps = {
   onVoiceTypeChange: (value: "Nam" | "Nữ" | "Trung tính AI") => void;
   onLanguageChange: (value: string) => void;
   onReadSpeedChange: (value: number) => void;
+  onEmotionIntensityChange: (value: number) => void;
+  onOutputFormatChange: (value: "mp3" | "wav") => void;
   onBgMusicEnabledChange: (value: boolean) => void;
   onReset: () => void;
   onGenerateVideo: () => void;
@@ -59,6 +63,8 @@ export function AiOptimizationSection({
   voiceType,
   language,
   readSpeed,
+  emotionIntensity,
+  outputFormat,
   bgMusicEnabled,
   isGeneratingVideo,
   onEmotionStyleChange,
@@ -70,6 +76,8 @@ export function AiOptimizationSection({
   onVoiceTypeChange,
   onLanguageChange,
   onReadSpeedChange,
+  onEmotionIntensityChange,
+  onOutputFormatChange,
   onBgMusicEnabledChange,
   onReset,
   onGenerateVideo,
@@ -229,6 +237,28 @@ export function AiOptimizationSection({
                 onChange={onReadSpeedChange}
                 minLabel="Chậm (0.5x)"
                 maxLabel="Nhanh (1.5x)"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <FieldLabel>Cảm xúc giọng đọc</FieldLabel>
+              <RangeField
+                value={emotionIntensity}
+                onChange={onEmotionIntensityChange}
+                minLabel="Điềm tĩnh"
+                maxLabel="Biểu cảm"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <FieldLabel>Định dạng xuất audio</FieldLabel>
+              <SelectField
+                value={outputFormat}
+                onChange={(value) => onOutputFormatChange(value as "mp3" | "wav")}
+                options={[
+                  { label: "MP3 - Nhẹ, tương thích cao", value: "mp3" },
+                  { label: "WAV - Chất lượng cao", value: "wav" },
+                ]}
               />
             </div>
 

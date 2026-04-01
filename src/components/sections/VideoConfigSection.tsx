@@ -33,6 +33,17 @@ export function VideoConfigSection({
   onAspectRatioChange,
   onDurationSecondsChange,
 }: VideoConfigSectionProps) {
+  const durationOptions: Array<{ label: string; value: number }> = [
+    { label: "10s", value: 10 },
+    { label: "30s", value: 30 },
+    { label: "60s", value: 60 },
+    { label: "3p", value: 180 },
+  ];
+
+  const selectedDurationLabel =
+    durationOptions.find((option) => option.value === durationSeconds)?.label ??
+    `${durationSeconds}s`;
+
   const aspectRatioOptions: Array<{
     ratio: "9:16" | "1:1" | "16:9" | "4:5";
     label: string;
@@ -80,7 +91,7 @@ export function VideoConfigSection({
                 {aiModel}
               </p>
               <p className="mt-1 text-xs text-[#6d9984]">
-                Google DeepMind - Ultra-quality food video
+                Runway Gen-4.5 - thời lượng hỗ trợ 2-10 giây
               </p>
             </div>
           </div>
@@ -107,9 +118,14 @@ export function VideoConfigSection({
           <div className="space-y-3">
             <FieldLabel>Thời lượng</FieldLabel>
             <SelectField
-              value={`${durationSeconds} giây`}
-              onChange={(value) => onDurationSecondsChange(Number(value.split(" ")[0]))}
-              options={["10 giây", "15 giây", "30 giây", "60 giây"]}
+              value={selectedDurationLabel}
+              onChange={(value) => {
+                const selected = durationOptions.find((option) => option.label === value);
+                if (selected) {
+                  onDurationSecondsChange(selected.value);
+                }
+              }}
+              options={durationOptions.map((option) => option.label)}
             />
           </div>
         </div>

@@ -24,6 +24,8 @@ interface GenerateAudioRequest {
     voiceGender: VoiceType;
     language: string;
     readSpeed: number;
+    emotionIntensity: number;
+    outputFormat: "mp3" | "wav";
     bgMusicEnabled?: boolean;
   };
 }
@@ -76,11 +78,13 @@ export async function POST(request: NextRequest) {
       settings: {
         voiceType: body.audioConfig.voiceGender,
         readSpeed: body.audioConfig.readSpeed,
+        emotionIntensity: body.audioConfig.emotionIntensity,
+        outputFormat: body.audioConfig.outputFormat,
         language: body.audioConfig.language,
       },
     });
 
-    const fileName = buildAudioFileName("voiceover");
+    const fileName = buildAudioFileName("voiceover", body.audioConfig.outputFormat);
     const audioUrl = await persistAudio(buffer, fileName);
     const narrationWords = narrationText.split(" ").filter(Boolean).length;
     const estimatedDurationSeconds = estimateNarrationDurationSeconds(

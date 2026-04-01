@@ -63,15 +63,28 @@ export function mapAspectRatioToRunwayRatio(
   return "720:1280";
 }
 
-function normalizeDurationSeconds(durationSeconds?: number): number {
-  const fallbackDuration = 5;
+function resolveDurationSeconds(durationSeconds?: number): number {
+  const fallbackDuration = 10;
 
-  if (!durationSeconds || Number.isNaN(durationSeconds)) {
+  if (durationSeconds === undefined || Number.isNaN(durationSeconds)) {
     return fallbackDuration;
   }
 
-  // Runway gen4.5 text-to-video supports only 2-10 seconds.
-  return Math.min(10, Math.max(2, Math.round(durationSeconds)));
+  if (!Number.isInteger(durationSeconds)) {
+    throw new Error("Thời lượng video phải là số nguyên theo đơn vị giây.");
+  }
+
+  // UI allows longer presets (30s, 60s, 3p), but current provider request supports max 10s per job.
+  if (durationSeconds > 10) {
+    return 10;
+  }
+
+  // Runway gen4.5 supports integer durations in range 2..10 seconds.
+  if (durationSeconds < 2 || durationSeconds > 10) {
+    throw new Error("Model hiện tại chỉ hỗ trợ thời lượng từ 2 đến 10 giây.");
+  }
+
+  return durationSeconds;
 }
 
 function normalizeRunwayError(error: unknown): RunwayGenerationError {
@@ -116,7 +129,7 @@ export async function generateVideoWithRunway(
   request: RunwayVideoRequest
 ): Promise<RunwayVideoResponse> {
   const model = request.model ?? "gen4.5";
-  const duration = normalizeDurationSeconds(request.durationSeconds);
+  const duration = resolveDurationSeconds(request.durationSeconds);
   const promptText = normalizePromptText(request.prompt);
   const promptImageUrl = request.promptImageUrl?.trim();
 
@@ -126,7 +139,7 @@ export async function generateVideoWithRunway(
           .create({
             model,
             promptText,
-            promptImage: promptImageUrl,
+            promptImage: [{ uri: promptImageUrl, position: "first" }],
             ratio: request.ratio,
             duration,
           })

@@ -32,6 +32,24 @@ async function downloadToFile(url: string, filePath: string): Promise<void> {
   await fs.writeFile(filePath, data);
 }
 
+async function buildVideoDownloadResponse(
+  fileBuffer: Buffer,
+  generationId: string,
+  withAudio: boolean
+): Promise<NextResponse> {
+  const suffix = withAudio ? "with-audio" : "video-only";
+  const fileName = `veofruit-generation-${generationId}-${suffix}.mp4`;
+
+  return new NextResponse(new Uint8Array(fileBuffer), {
+    status: 200,
+    headers: {
+      "Content-Type": "video/mp4",
+      "Content-Disposition": `attachment; filename="${fileName}"`,
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 async function materializeAudioInput(audioUrl: string, audioInputPath: string): Promise<void> {
   if (audioUrl.startsWith("/")) {
     const localPath = path.join(process.cwd(), "public", audioUrl.replace(/^\//, ""));
@@ -111,6 +129,8 @@ async function muxVideoWithAudio(
       "copy",
       "-c:a",
       "aac",
+      "-af",
+      "apad",
       "-shortest",
       outputPath,
     ];
@@ -164,34 +184,32 @@ export async function GET(
       );
     }
 
-    const audioUrl = extractAudioUrl(generation.voiceSettings);
-    if (!audioUrl) {
-      return NextResponse.json(
-        { error: "Voice-over audio is not available for this generation" },
-        { status: 400 }
-      );
-    }
-
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "veofruit-mux-"));
     const videoInputPath = path.join(tempDir, "video-input.mp4");
     const audioInputPath = path.join(tempDir, "audio-input.mp3");
     const outputPath = path.join(tempDir, "video-with-audio.mp4");
 
     await downloadToFile(generation.outputUrl, videoInputPath);
-    await materializeAudioInput(audioUrl, audioInputPath);
-    await muxVideoWithAudio(videoInputPath, audioInputPath, outputPath);
 
-    const mergedVideo = await fs.readFile(outputPath);
-    const fileName = `veofruit-generation-${generation.id}-with-audio.mp4`;
+    const audioUrl = extractAudioUrl(generation.voiceSettings);
+    if (!audioUrl) {
+      const originalVideo = await fs.readFile(videoInputPath);
+      return buildVideoDownloadResponse(originalVideo, generation.id, false);
+    }
 
-    return new NextResponse(mergedVideo, {
-      status: 200,
-      headers: {
-        "Content-Type": "video/mp4",
-        "Content-Disposition": `attachment; filename="${fileName}"`,
-        "Cache-Control": "no-store",
-      },
-    });
+    try {
+      await materializeAudioInput(audioUrl, audioInputPath);
+      await muxVideoWithAudio(videoInputPath, audioInputPath, outputPath);
+      const mergedVideo = await fs.readFile(outputPath);
+      return buildVideoDownloadResponse(mergedVideo, generation.id, true);
+    } catch (muxError) {
+      console.error(
+        `[Generation ${generation.id}] Audio mux failed, fallback to video-only download:`,
+        muxError
+      );
+      const originalVideo = await fs.readFile(videoInputPath);
+      return buildVideoDownloadResponse(originalVideo, generation.id, false);
+    }
   } catch (error) {
     console.error("GET /api/generations/[id]/download error:", error);
     return NextResponse.json(

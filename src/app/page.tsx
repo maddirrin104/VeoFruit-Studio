@@ -142,7 +142,7 @@ const DEFAULT_FORM = {
   resolution: "720p" as "720p" | "1080p",
   aiModel: "Veo 3.1 Fast",
   aspectRatio: "9:16" as "9:16" | "1:1" | "16:9" | "4:5",
-  durationSeconds: 15,
+  durationSeconds: 10,
   emotionStyle: "Vật tươi",
   visualStyle: "Cinematic",
   motionIntensity: 50,
@@ -152,6 +152,8 @@ const DEFAULT_FORM = {
   voiceType: "Nam" as "Nam" | "Nữ" | "Trung tính AI",
   language: "Tiếng Việt",
   readSpeed: 50,
+  emotionIntensity: 50,
+  outputFormat: "mp3" as "mp3" | "wav",
   bgMusicEnabled: false,
 };
 
@@ -229,6 +231,8 @@ export default function HomePage() {
           voiceGender: form.voiceType,
           language: form.language,
           readSpeed: form.readSpeed,
+          emotionIntensity: form.emotionIntensity,
+          outputFormat: form.outputFormat,
           bgMusicEnabled: form.bgMusicEnabled,
         },
       });
@@ -369,6 +373,12 @@ export default function HomePage() {
       }
 
       const uploadedWebImageUrl = normalizeWebImageUrl(uploadedSampleImageUrl);
+      const effectiveReferenceImageUrl = webReferenceImageUrl ?? uploadedWebImageUrl;
+      const referenceImageSource = webReferenceImageUrl
+        ? "url"
+        : uploadedWebImageUrl
+        ? "upload"
+        : undefined;
 
       await updateProject(pid, {
         title: form.title,
@@ -402,14 +412,17 @@ export default function HomePage() {
           motionIntensity: form.motionIntensity,
           transitionEnabled: form.transitionEnabled,
           subjectConsistent: form.subjectConsistent,
-          referenceImageUrl: webReferenceImageUrl ?? uploadedWebImageUrl,
+          referenceImageUrl: effectiveReferenceImageUrl,
           referenceImageName: sampleImageName,
+          referenceImageSource,
         },
         audioConfig: {
           narrationMode: form.narrationMode,
           voiceGender: form.voiceType,
           language: form.language,
           readSpeed: form.readSpeed,
+          emotionIntensity: form.emotionIntensity,
+          outputFormat: form.outputFormat,
           bgMusicEnabled: form.bgMusicEnabled,
         },
       });
@@ -637,6 +650,8 @@ export default function HomePage() {
                 voiceType={form.voiceType}
                 language={form.language}
                 readSpeed={form.readSpeed}
+                emotionIntensity={form.emotionIntensity}
+                outputFormat={form.outputFormat}
                 bgMusicEnabled={form.bgMusicEnabled}
                 isGeneratingVideo={isGeneratingVideo}
                 onEmotionStyleChange={(value) => updateForm({ emotionStyle: value })}
@@ -661,6 +676,8 @@ export default function HomePage() {
                 }
                 onLanguageChange={(value) => updateForm({ language: value })}
                 onReadSpeedChange={(value) => updateForm({ readSpeed: value })}
+                onEmotionIntensityChange={(value) => updateForm({ emotionIntensity: value })}
+                onOutputFormatChange={(value) => updateForm({ outputFormat: value })}
                 onBgMusicEnabledChange={(value) => updateForm({ bgMusicEnabled: value })}
                 onReset={handleReset}
                 onGenerateVideo={handleGenerateVideo}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { UpdateProjectRequest } from "@/types/studio";
+import { Prisma } from "@prisma/client";
 
 export async function GET(
   request: NextRequest,
@@ -16,7 +17,7 @@ export async function GET(
           select: { id: true, email: true, fullName: true },
         },
       },
-    }) as any;
+    });
 
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
@@ -50,14 +51,14 @@ export async function PATCH(
     // Verify project exists
     const existingProject = await prisma.videoProject.findUnique({
       where: { id: projectId },
-    }) as any;
+    });
 
     if (!existingProject) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
     // Prepare update data
-    const updateData: any = {
+    const updateData: Prisma.VideoProjectUpdateInput = {
       title: body.title ?? existingProject?.title,
       storyTopic: body.storyTopic ?? existingProject?.storyTopic,
       videoGenre: body.videoGenre ?? existingProject?.videoGenre,
@@ -67,7 +68,7 @@ export async function PATCH(
     const updatedProject = await prisma.videoProject.update({
       where: { id: projectId },
       data: updateData,
-    }) as any;
+    });
 
     return NextResponse.json(
       {
