@@ -27,8 +27,7 @@ export function extractDialogueLinesFromScript(script: string): string[] {
     .replace(/(BỐI CẢNH|BOI CANH|NHÂN VẬT|NHAN VAT|HÌNH ẢNH|HINH ANH)\s*:/gi, "")
     .split(/[.!?]+/)
     .map((part) => part.trim())
-    .filter(Boolean)
-    .slice(0, 6);
+    .filter(Boolean);
 }
 
 function estimateWordsPerMinute(language: string): number {
