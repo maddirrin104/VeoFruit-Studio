@@ -29,6 +29,28 @@ const topicTypes = [
 ];
 
 const CHARACTER_DESCRIPTION_MAX_LENGTH = 220;
+const CUSTOM_OPTION_VALUE = "__custom__";
+
+const characterTypeOptions = [
+  "Nữ tư vấn viên cửa hàng trái cây",
+  "Nam tư vấn viên cửa hàng trái cây",
+  "Chủ shop trái cây thân thiện",
+  "Nhân viên siêu thị quầy trái cây",
+  "Đầu bếp chia sẻ công thức trái cây",
+  "Food reviewer trải nghiệm trái cây",
+  "Mẹ bỉm chia sẻ bữa phụ cho bé",
+  "MC giới thiệu sản phẩm tại quầy",
+  "Nhân vật 3D hoạt hình",
+  "Sinh viên làm vlog ẩm thực",
+] as const;
+
+const sceneLocationOptions = [
+  "Cửa hàng trái cây",
+  "Quầy trái cây trong trung tâm thương mại",
+  "Sạp trái cây ngoài chợ",
+  "Nông trại trái cây",
+  "Bếp gia đình",
+] as const;
 
 type ContentEditorSectionProps = {
   storyTopic: string;
@@ -82,6 +104,17 @@ export function ContentEditorSection({
   onRandomizeScript,
 }: ContentEditorSectionProps) {
   const [isScriptReaderOpen, setIsScriptReaderOpen] = useState(false);
+  const characterTypeSelectValue = characterTypeOptions.includes(
+    characterType as (typeof characterTypeOptions)[number]
+  )
+    ? characterType
+    : CUSTOM_OPTION_VALUE;
+
+  const sceneLocationSelectValue = sceneLocationOptions.includes(
+    sceneLocation as (typeof sceneLocationOptions)[number]
+  )
+    ? sceneLocation
+    : CUSTOM_OPTION_VALUE;
 
   const scriptMeta = useMemo(() => {
     const lines = script
@@ -115,35 +148,42 @@ export function ContentEditorSection({
             <div className="space-y-2">
               <FieldLabel>Nhân vật</FieldLabel>
               <SelectField
-                value={characterType}
-                onChange={onCharacterTypeChange}
+                value={characterTypeSelectValue}
+                onChange={(value) => {
+                  if (value !== CUSTOM_OPTION_VALUE) {
+                    onCharacterTypeChange(value);
+                  }
+                }}
                 options={[
-                  "Nữ tư vấn viên cửa hàng trái cây",
-                  "Nam tư vấn viên cửa hàng trái cây",
-                  "Chủ shop trái cây thân thiện",
-                  "Nhân viên siêu thị quầy trái cây",
-                  "Đầu bếp chia sẻ công thức trái cây",
-                  "Food reviewer trải nghiệm trái cây",
-                  "Mẹ bỉm chia sẻ bữa phụ cho bé",
-                  "MC giới thiệu sản phẩm tại quầy",
-                  "Nhân vật 3D hoạt hình",
-                  "Sinh viên làm vlog ẩm thực",
+                  ...characterTypeOptions,
+                  { label: "Tự nhập...", value: CUSTOM_OPTION_VALUE },
                 ]}
+              />
+              <TextInput
+                placeholder="Hoặc tự nhập nhân vật, ví dụ: Chủ quầy trái cây thân thiện, nói gần gũi..."
+                value={characterType}
+                onChange={(event) => onCharacterTypeChange(event.target.value)}
               />
             </div>
 
             <div className="space-y-2">
               <FieldLabel>Bối cảnh</FieldLabel>
               <SelectField
-                value={sceneLocation}
-                onChange={onSceneLocationChange}
+                value={sceneLocationSelectValue}
+                onChange={(value) => {
+                  if (value !== CUSTOM_OPTION_VALUE) {
+                    onSceneLocationChange(value);
+                  }
+                }}
                 options={[
-                  "Cửa hàng trái cây",
-                  "Quầy trái cây trong trung tâm thương mại",
-                  "Sạp trái cây ngoài chợ",
-                  "Nông trại trái cây",
-                  "Bếp gia đình",
+                  ...sceneLocationOptions,
+                  { label: "Tự nhập...", value: CUSTOM_OPTION_VALUE },
                 ]}
+              />
+              <TextInput
+                placeholder="Hoặc tự nhập bối cảnh, ví dụ: Cửa hàng hoa quả sạch Minh Lâm..."
+                value={sceneLocation}
+                onChange={(event) => onSceneLocationChange(event.target.value)}
               />
             </div>
           </div>
