@@ -11,6 +11,10 @@ import {
   buildNarrationText,
   estimateNarrationDurationSeconds,
 } from "@/lib/audio-narration";
+import {
+  mixBackgroundMusic,
+  optimizeVoiceOverAudio,
+} from "@/lib/audio-postprocess";
 
 interface GenerateAudioRequest {
   script?: string;
@@ -84,9 +88,23 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    const optimizedVoice = await optimizeVoiceOverAudio({
+      inputBuffer: buffer,
+      targetDurationSeconds: body.durationSeconds,
+      inputExtension: "mp3",
+    });
+
+    const withBgMusic = body.audioConfig.bgMusicEnabled
+      ? await mixBackgroundMusic({
+          voiceBuffer: optimizedVoice.buffer,
+          voiceDurationSeconds: optimizedVoice.durationAfterSeconds,
+          outputExtension: "mp3",
+        })
+      : { buffer: optimizedVoice.buffer, mixed: false as const };
+
     const outputExt = body.audioConfig.outputFormat === "wav" ? "mp3" : body.audioConfig.outputFormat;
     const fileName = buildAudioFileName("voiceover", outputExt);
-    const audioUrl = await persistAudio(buffer, fileName);
+    const audioUrl = await persistAudio(withBgMusic.buffer, fileName);
     const narrationWords = narrationText.split(" ").filter(Boolean).length;
     const estimatedDurationSeconds = estimateNarrationDurationSeconds(
       narrationText,

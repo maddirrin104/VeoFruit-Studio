@@ -298,10 +298,30 @@ export function ContentEditorSection({
             </div>
 
             <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
-              <div className="rounded-xl border border-[#b8e2c8] bg-[#f5fbf7] p-4">
-                <pre className="whitespace-pre-wrap break-words font-[family:var(--font-manrope)] text-[14px] leading-7 text-[#1f513d]">
-                  {script.trim() || "Chưa có kịch bản để hiển thị."}
-                </pre>
+              <div className="space-y-3 rounded-xl border border-[#b8e2c8] bg-[#f5fbf7] p-4">
+                <div className="flex items-center justify-between text-xs text-[#5f8f79]">
+                  <p>Bạn có thể chỉnh sửa trực tiếp kịch bản tại đây.</p>
+                  <p>{script.length} ký tự</p>
+                </div>
+
+                <TextArea
+                  rows={14}
+                  autoFocus
+                  className="min-h-[320px] resize-y border-[#a8dfbf] bg-white/95 font-[family:var(--font-manrope)] text-[14px] leading-7 text-[#1f513d]"
+                  placeholder="Nhập hoặc chỉnh sửa kịch bản..."
+                  value={script}
+                  onChange={(event) => onScriptChange(event.target.value)}
+                />
+
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setIsScriptReaderOpen(false)}
+                    className="rounded-full border border-[#8ed0ad] bg-white px-4 py-2 text-xs font-semibold text-[#1b6e48] transition hover:border-[#67c193]"
+                  >
+                    Xong
+                  </button>
+                </div>
               </div>
             </div>
           </div>

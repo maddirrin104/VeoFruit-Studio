@@ -19,6 +19,10 @@ import {
   buildNarrationText,
   estimateNarrationDurationSeconds,
 } from "@/lib/audio-narration";
+import {
+  mixBackgroundMusic,
+  optimizeVoiceOverAudio,
+} from "@/lib/audio-postprocess";
 import { CreateGenerationRequest } from "@/types/studio";
 
 type VideoProjectRecord = NonNullable<
@@ -320,9 +324,23 @@ async function generateVideoInBackground(
           },
         });
 
+        const optimizedVoice = await optimizeVoiceOverAudio({
+          inputBuffer: audioBuffer,
+          targetDurationSeconds: videoConfig.durationSeconds,
+          inputExtension: "mp3",
+        });
+
+        const withBgMusic = audioConfig.bgMusicEnabled
+          ? await mixBackgroundMusic({
+              voiceBuffer: optimizedVoice.buffer,
+              voiceDurationSeconds: optimizedVoice.durationAfterSeconds,
+              outputExtension: "mp3",
+            })
+          : { buffer: optimizedVoice.buffer, mixed: false as const };
+
         const outputExt = audioConfig.outputFormat === "wav" ? "mp3" : audioConfig.outputFormat;
         const audioFileName = buildAudioFileName(`gen-${generationId}`, outputExt);
-        const audioUrl = await persistAudio(audioBuffer, audioFileName);
+        const audioUrl = await persistAudio(withBgMusic.buffer, audioFileName);
 
         voiceSettings = {
           ...audioConfig,
@@ -341,6 +359,15 @@ async function generateVideoInBackground(
             audioConfig.language,
             audioConfig.readSpeed
           ),
+          postProcessing: {
+            trimmedSilence: optimizedVoice.trimmedSilence,
+            durationBeforeSeconds: optimizedVoice.durationBeforeSeconds,
+            durationAfterSeconds: optimizedVoice.durationAfterSeconds,
+            speedFactorApplied: optimizedVoice.speedFactorApplied,
+            backgroundMusicEnabled: Boolean(audioConfig.bgMusicEnabled),
+            backgroundMusicMixed: withBgMusic.mixed,
+            backgroundMusicNote: withBgMusic.reason,
+          },
         };
       } catch (audioError) {
         console.error(`[Generation ${generationId}] Voice-over failed:`, audioError);

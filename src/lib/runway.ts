@@ -129,11 +129,85 @@ function shouldFallbackToTextOnly(error: unknown): boolean {
   const message = (error as Error)?.message || "";
   const lowered = message.toLowerCase();
 
+  const failureDetails: { failure?: string; failureCode?: string } =
+    error instanceof TaskFailedError
+      ? ((error as TaskFailedError & {
+          taskDetails?: { failure?: string; failureCode?: string };
+        }).taskDetails ?? {})
+      : {};
+
+  const failureText = `${failureDetails.failure ?? ""} ${failureDetails.failureCode ?? ""}`
+    .trim()
+    .toLowerCase();
+
   return (
     lowered.includes("promptimage") ||
     lowered.includes("timeout while fetching asset") ||
-    lowered.includes("invalid_union")
+    lowered.includes("invalid_union") ||
+    failureText.includes("promptimage") ||
+    failureText.includes("fetch") ||
+    failureText.includes("asset") ||
+    failureText.includes("url")
   );
+}
+
+function isPrivateOrLocalHostname(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase();
+
+  if (!normalized) {
+    return true;
+  }
+
+  if (
+    normalized === "localhost" ||
+    normalized === "127.0.0.1" ||
+    normalized === "::1" ||
+    normalized.endsWith(".local")
+  ) {
+    return true;
+  }
+
+  if (/^10\./.test(normalized)) {
+    return true;
+  }
+
+  if (/^192\.168\./.test(normalized)) {
+    return true;
+  }
+
+  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(normalized)) {
+    return true;
+  }
+
+  return false;
+}
+
+function resolvePromptImageUrl(promptImageUrl?: string): string | undefined {
+  const trimmed = promptImageUrl?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:") {
+      console.warn("[Runway] Skip image-to-video because promptImage URL is not HTTPS:", trimmed);
+      return undefined;
+    }
+
+    if (isPrivateOrLocalHostname(parsed.hostname)) {
+      console.warn(
+        "[Runway] Skip image-to-video because promptImage URL is local/private and not reachable by Runway:",
+        trimmed
+      );
+      return undefined;
+    }
+
+    return parsed.toString();
+  } catch {
+    console.warn("[Runway] Skip image-to-video because promptImage URL is invalid:", trimmed);
+    return undefined;
+  }
 }
 
 export async function generateVideoWithRunway(
@@ -142,7 +216,7 @@ export async function generateVideoWithRunway(
   const model = request.model ?? "gen4.5";
   const duration = resolveDurationSeconds(request.durationSeconds);
   const promptText = normalizePromptText(request.prompt);
-  const promptImageUrl = request.promptImageUrl?.trim();
+  const promptImageUrl = resolvePromptImageUrl(request.promptImageUrl);
 
   try {
     let task;

@@ -81,7 +81,7 @@ function normalizeWebImageUrl(url?: string): string | undefined {
     return undefined;
   }
 
-  return /^https:\/\//i.test(trimmed) ? trimmed : undefined;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : undefined;
 }
 
 function buildDefaultCharacterDescription(
@@ -176,6 +176,7 @@ export default function HomePage() {
   const [referenceImageUrl, setReferenceImageUrl] = useState<string | undefined>(undefined);
   const [isUploadingSampleImage, setIsUploadingSampleImage] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const sampleImageUploadTokenRef = useRef(0);
 
   const updateForm = useCallback((partial: Partial<typeof DEFAULT_FORM>) => {
@@ -350,6 +351,7 @@ export default function HomePage() {
   const handleGenerateVideo = useCallback(async () => {
     setIsGeneratingVideo(true);
     setErrorMessage(null);
+    setSuccessMessage(null);
 
     try {
       const pid = await ensureProject();
@@ -369,7 +371,7 @@ export default function HomePage() {
       const hasManualReferenceUrl = Boolean(referenceImageUrl?.trim());
       const webReferenceImageUrl = normalizeWebImageUrl(referenceImageUrl);
       if (hasManualReferenceUrl && !webReferenceImageUrl) {
-        throw new Error("URL ảnh phải là link web HTTPS (ví dụ: https://example.com/image.jpg).");
+        throw new Error("URL ảnh phải bắt đầu bằng http:// hoặc https://.");
       }
 
       const uploadedWebImageUrl = normalizeWebImageUrl(uploadedSampleImageUrl);
@@ -433,6 +435,7 @@ export default function HomePage() {
       setAudioUrl(undefined);
     } catch (error) {
       setErrorMessage((error as Error).message);
+      setSuccessMessage(null);
       setIsGeneratingVideo(false);
     }
   }, [
@@ -467,6 +470,11 @@ export default function HomePage() {
             statusData.errorMessage ||
               "Tạo video thất bại. Vui lòng kiểm tra quota API và thử lại."
           );
+          setSuccessMessage(null);
+        }
+
+        if (status === "completed") {
+          setSuccessMessage("Tạo video thành công. Bạn có thể xem trước hoặc tải video ngay.");
         }
 
         if (status === "completed" || status === "failed") {
@@ -565,6 +573,7 @@ export default function HomePage() {
       return undefined;
     });
     setErrorMessage(null);
+    setSuccessMessage(null);
   }, []);
 
   return (
@@ -694,6 +703,19 @@ export default function HomePage() {
                 <p className="rounded-xl border border-[#f2bfbf] bg-[#fff1f1] px-4 py-3 text-sm text-[#b12b2b]">
                   {errorMessage}
                 </p>
+              ) : null}
+              {successMessage && !errorMessage ? (
+                <div className="flex items-start gap-2 rounded-xl border border-[#9fdab9] bg-[#eff9f3] px-4 py-3 text-sm text-[#1b6e48]">
+                  <span className="mt-0.5 inline-block h-2.5 w-2.5 rounded-full bg-[#10b862]" />
+                  <div className="flex-1">{successMessage}</div>
+                  <button
+                    type="button"
+                    onClick={() => setSuccessMessage(null)}
+                    className="rounded-md px-2 py-1 text-xs font-semibold text-[#2a7a55] transition hover:bg-[#dff2e7]"
+                  >
+                    Đóng
+                  </button>
+                </div>
               ) : null}
           </div>
 

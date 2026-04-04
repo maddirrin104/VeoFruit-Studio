@@ -14,6 +14,18 @@ const MIME_TO_EXT: Record<string, string> = {
 };
 
 function getPublicOrigin(request: Request): string {
+  const configuredPublicBase = process.env.PUBLIC_APP_URL?.trim();
+  if (configuredPublicBase) {
+    try {
+      const parsed = new URL(configuredPublicBase);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        return parsed.origin;
+      }
+    } catch {
+      console.warn("PUBLIC_APP_URL is invalid. Falling back to request origin.");
+    }
+  }
+
   const url = new URL(request.url);
   const forwardedProto = request.headers.get("x-forwarded-proto");
   const forwardedHost = request.headers.get("x-forwarded-host");
