@@ -261,6 +261,13 @@ export default function HomePage() {
     setErrorMessage(null);
 
     try {
+      const effectiveReferenceImageUrl = uploadedSampleImageUrl ?? referenceImageUrl;
+      const effectiveReferenceImageSource = uploadedSampleImageUrl
+        ? "upload"
+        : referenceImageUrl
+        ? "url"
+        : undefined;
+
       const result = await generateScript({
         topic: form.storyTopic,
         characterDescription: form.characterDescription,
@@ -270,6 +277,9 @@ export default function HomePage() {
         videoGenre: form.videoGenre,
         contentTone: form.contentTone,
         numberOfScenes: form.numberOfScenes,
+        referenceImageUrl: effectiveReferenceImageUrl,
+        referenceImageName: sampleImageName,
+        referenceImageSource: effectiveReferenceImageSource,
       });
 
       updateForm({ script: result.script });
@@ -283,6 +293,9 @@ export default function HomePage() {
     form.characterType,
     form.contentTone,
     form.numberOfScenes,
+    referenceImageUrl,
+    sampleImageName,
+    uploadedSampleImageUrl,
     form.sceneLocation,
     form.storyTopic,
     form.videoGenre,
@@ -329,6 +342,13 @@ export default function HomePage() {
     setErrorMessage(null);
 
     try {
+      const effectiveReferenceImageUrl = uploadedSampleImageUrl ?? referenceImageUrl;
+      const effectiveReferenceImageSource = uploadedSampleImageUrl
+        ? "upload"
+        : referenceImageUrl
+        ? "url"
+        : undefined;
+
       const result = await generateScript({
         topic: form.storyTopic,
         characterDescription: randomCharacterDescription,
@@ -338,6 +358,9 @@ export default function HomePage() {
         videoGenre: randomGenre,
         contentTone: randomContentTone,
         numberOfScenes: randomScenes,
+        referenceImageUrl: effectiveReferenceImageUrl,
+        referenceImageName: sampleImageName,
+        referenceImageSource: effectiveReferenceImageSource,
       });
 
       updateForm({ script: result.script });
@@ -346,7 +369,14 @@ export default function HomePage() {
     } finally {
       setIsGeneratingScript(false);
     }
-  }, [form.storyTopic, form.voiceType, updateForm]);
+  }, [
+    form.storyTopic,
+    form.voiceType,
+    referenceImageUrl,
+    sampleImageName,
+    updateForm,
+    uploadedSampleImageUrl,
+  ]);
 
   const handleGenerateVideo = useCallback(async () => {
     setIsGeneratingVideo(true);

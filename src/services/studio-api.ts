@@ -79,6 +79,9 @@ export async function generateScript(payload: {
   videoGenre?: string;
   contentTone?: string;
   numberOfScenes?: number;
+  referenceImageUrl?: string;
+  referenceImageName?: string;
+  referenceImageSource?: "upload" | "url";
 }): Promise<{ script: string; estimatedDuration: string; sceneCount: number }> {
   return http<{ script: string; estimatedDuration: string; sceneCount: number }>(
     "/api/ai/generate-script",

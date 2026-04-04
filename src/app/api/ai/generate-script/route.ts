@@ -1,4 +1,15 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenAI, createPartFromBase64, createPartFromText } from "@google/genai";
+
+const apiKey = process.env.GOOGLE_API_KEY;
+
+if (!apiKey) {
+  throw new Error("GOOGLE_API_KEY environment variable is required");
+}
+
+const genAI = new GoogleGenAI({ apiKey, apiVersion: "v1" });
 
 interface GenerateScriptRequest {
   topic: string;
@@ -9,13 +20,11 @@ interface GenerateScriptRequest {
   videoGenre?: string;
   contentTone?: string;
   numberOfScenes?: number;
+  referenceImageUrl?: string;
+  referenceImageName?: string;
+  referenceImageSource?: "upload" | "url";
 }
 
-/**
- * Generate video script using Claude or similar API
- * For now, this is a placeholder that returns a template script
- * In production, you would integrate with Claude API or similar
- */
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as GenerateScriptRequest;
@@ -29,28 +38,70 @@ export async function POST(request: NextRequest) {
       videoGenre = "Giới thiệu trong cửa hàng",
       contentTone = "Giới thiệu",
       numberOfScenes = 3,
+      referenceImageUrl,
+      referenceImageName,
+      referenceImageSource,
     } = body;
 
     const resolvedCharacterDescription =
       characterDescription.trim() ||
       buildDefaultCharacterDescription(voiceType, characterType, sceneLocation);
 
-    // Template script generator (replace with actual AI API call)
-    const script = generateTemplateScript(
+    const imagePart = referenceImageUrl
+      ? await loadReferenceImagePart(request, referenceImageUrl)
+      : undefined;
+
+    const prompt = buildGeminiScriptPrompt({
       topic,
-      resolvedCharacterDescription,
+      characterDescription: resolvedCharacterDescription,
       characterType,
       sceneLocation,
       voiceType,
       videoGenre,
       contentTone,
-      numberOfScenes
-    );
+      numberOfScenes,
+      referenceImageName,
+      referenceImageSource,
+      hasReferenceImage: Boolean(imagePart),
+    });
+
+    const model = genAI.models as unknown as {
+      generateContent: (args: {
+        model: string;
+        contents: Array<{ role?: string; parts: unknown[] }> | string;
+        config?: {
+          temperature?: number;
+          topP?: number;
+          maxOutputTokens?: number;
+          responseMimeType?: string;
+        };
+      }) => Promise<{ text?: string }>;
+    };
+
+    const contents = imagePart
+      ? [{ role: "user", parts: [createPartFromText(prompt), imagePart] }]
+      : prompt;
+
+    const result = await model.generateContent({
+      model: "gemini-2.5-flash",
+      contents,
+      config: {
+        temperature: 0.7,
+        topP: 0.95,
+        maxOutputTokens: 1024,
+        responseMimeType: "text/plain",
+      },
+    });
+
+    const script = result.text?.trim();
+    if (!script) {
+      throw new Error("Gemini returned an empty script response");
+    }
 
     return NextResponse.json({
       data: {
         script,
-        estimatedDuration: `${Math.min(numberOfScenes * 5, 60)} seconds`,
+        estimatedDuration: `${Math.min(numberOfScenes * 6, 72)} seconds`,
         sceneCount: numberOfScenes,
       },
     });
@@ -63,245 +114,112 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/**
- * Generate a template video script
- * TODO: Replace with actual Claude/OpenAI API integration
- */
-function generateTemplateScript(
-  topic: string,
-  characterDescription: string,
-  characterType: string,
-  sceneLocation: string,
-  voiceType: "Nam" | "Nữ",
-  videoGenre: string,
-  tone: string,
-  scenes: number
-): string {
-  const sceneScripts: string[] = [];
-
-  for (let i = 1; i <= scenes; i++) {
-    const sceneContent = generateSceneContent(
-      i,
-      scenes,
-      topic,
-      characterDescription,
-      characterType,
-      sceneLocation,
-      voiceType,
-      videoGenre,
-      tone
-    );
-    sceneScripts.push(sceneContent);
-  }
-
-  return sceneScripts.join("\n\n---\n\n");
-}
-
-function generateSceneContent(
-  sceneNum: number,
-  totalScenes: number,
-  topic: string,
-  characterDescription: string,
-  characterType: string,
-  sceneLocation: string,
-  voiceType: "Nam" | "Nữ",
-  videoGenre: string,
-  tone: string
-): string {
-  const inferredVoiceType = characterType.includes("Nữ")
-    ? "Nữ"
-    : characterType.includes("Nam")
-    ? "Nam"
-    : voiceType;
-
-  const narrator =
-    inferredVoiceType === "Nữ"
-      ? "em"
-      : "anh";
-  const narratorCap = narrator.charAt(0).toUpperCase() + narrator.slice(1);
-  const toneLine = buildToneDialogueLine(tone, {
-    topic,
-    sceneLocation,
-    narrator,
-    narratorCap,
-    sceneNum,
-    totalScenes,
-  });
-
-  if (sceneNum === 1) {
-    return `SCENE ${sceneNum} - MỞ CẢNH
-BỐI CẢNH: ${sceneLocation}. THỂ LOẠI: ${videoGenre}. TÔNG: ${tone}.
-
-NHÂN VẬT: ${characterType}. MÔ TẢ: ${characterDescription}
-
-LỜI THOẠI: "${toneLine.opening}"
-
-HÌNH ẢNH: Cận cảnh ${topic}, nhân vật mỉm cười và nâng trái cây về phía máy quay.`;
-  }
-
-  if (sceneNum === totalScenes) {
-    return `SCENE ${sceneNum} - KẾT CẢNH
-BỐI CẢNH: ${sceneLocation} với ánh sáng ấm áp.
-
-LỜI THOẠI: "${toneLine.ending}"
-
-HÌNH ẢNH: Nhân vật vẫy tay chào, logo cửa hàng xuất hiện, kết thúc mềm mại.`;
-  }
-
-  return `SCENE ${sceneNum} - NỘI DUNG CHÍNH
-BỐI CẢNH: ${sceneLocation}. NHÂN VẬT: ${characterType}.
-
-LỜI THOẠI: "${toneLine.middle}"
-
-HÌNH ẢNH: Nhân vật chọn từng quả ${topic}, chỉ rõ độ tươi, vỏ, màu sắc và cách bảo quản.`;
-}
-
-function buildToneDialogueLine(
-  tone: string,
-  context: {
-    topic: string;
-    sceneLocation: string;
-    narrator: string;
-    narratorCap: string;
-    sceneNum: number;
-    totalScenes: number;
-  }
-): { opening: string; middle: string; ending: string } {
-  const { topic, sceneLocation, narrator, narratorCap } = context;
-  const normalized = normalizeToneKey(tone);
-
-  if (normalized.includes("hai huoc")) {
-    return {
-      opening: `Xin chào cả nhà, hôm nay ${narrator} đến ${sceneLocation.toLowerCase()} với nhiệm vụ tìm ra trái ${topic} ngon đến mức ăn một miếng là muốn xin thêm miếng nữa!`,
-      middle: `${narratorCap} chấm nhanh ${topic}: nhìn tươi, mùi thơm, cắn vào giòn ngọt. Mẹo của ${narrator} là chọn quả chắc tay, vỏ đều màu và không dập cuống.`,
-      ending: `Nếu bạn thấy ${topic} hợp gu, ghé ${sceneLocation.toLowerCase()} để ${narrator} tư vấn bản "ngon - bổ - hợp túi tiền" nhé!`,
-    };
-  }
-
-  if (normalized.includes("review")) {
-    return {
-      opening: `Xin chào mọi người, hôm nay ${narrator} review nhanh ${topic} tại ${sceneLocation.toLowerCase()} theo 3 tiêu chí: độ tươi, hương vị và mức giá.`,
-      middle: `Đánh giá thực tế: ${topic} có độ mọng tốt, vị cân bằng và dễ dùng cho cả ăn trực tiếp lẫn làm món tráng miệng. ${narratorCap} sẽ chỉ cách chọn quả đạt chất lượng ổn định.`,
-      ending: `Tổng kết của ${narrator}: ${topic} đáng thử trong tầm giá hiện tại. Bạn có thể ghé ${sceneLocation.toLowerCase()} để xem lô hàng mới trong ngày.`,
-    };
-  }
-
-  if (normalized.includes("ke chuyen")) {
-    return {
-      opening: `Sáng nay ở ${sceneLocation.toLowerCase()}, ${narrator} gặp lô ${topic} vừa về còn thơm mùi vườn. Từ khoảnh khắc đó, ${narrator} muốn kể bạn nghe hành trình của những trái quả thật sự chất lượng.`,
-      middle: `${narratorCap} chọn từng trái ${topic} dựa vào cuống, độ đàn hồi và mùi hương. Mỗi chi tiết nhỏ đều quyết định trải nghiệm ngon khi mang về nhà.`,
-      ending: `Câu chuyện hôm nay dừng lại ở đây, nhưng trải nghiệm với ${topic} thì còn tiếp. Ghé ${sceneLocation.toLowerCase()} để ${narrator} chia sẻ thêm nhé.`,
-    };
-  }
-
-  if (normalized.includes("khuyen mai")) {
-    return {
-      opening: `Thông tin nhanh cho bạn: ${topic} tại ${sceneLocation.toLowerCase()} đang có chương trình ưu đãi trong ngày với số lượng giới hạn.`,
-      middle: `${narratorCap} gợi ý bạn chọn ${topic} theo độ chín phù hợp nhu cầu dùng ngay hoặc để 1-2 ngày. Vừa ngon, vừa tối ưu chi phí mua sắm.`,
-      ending: `Nếu cần ${topic} cho gia đình hoặc biếu tặng, ghé ${sceneLocation.toLowerCase()} sớm để nhận mức giá tốt và được ${narrator} hỗ trợ chọn hàng.`,
-    };
-  }
-
-  if (normalized.includes("loi ich") || normalized.includes("suc khoe")) {
-    return {
-      opening: `Hôm nay ${narrator} chia sẻ về ${topic} tại ${sceneLocation.toLowerCase()} dưới góc nhìn dinh dưỡng và cách dùng hằng ngày.`,
-      middle: `${topic} là lựa chọn phù hợp để bổ sung chất xơ và vitamin trong khẩu phần. ${narratorCap} sẽ hướng dẫn cách chọn trái tươi để giữ hương vị và giá trị dinh dưỡng tốt hơn.`,
-      ending: `Bạn có thể bắt đầu từ lượng vừa phải mỗi ngày với ${topic}. Ghé ${sceneLocation.toLowerCase()} để ${narrator} tư vấn theo nhu cầu cụ thể của bạn.`,
-    };
-  }
-
-  if (normalized.includes("giao duc")) {
-    return {
-      opening: `Trong nội dung giáo dục hôm nay, ${narrator} sẽ giải thích cách nhận biết ${topic} đạt chất lượng tại ${sceneLocation.toLowerCase()} dựa trên các dấu hiệu dễ quan sát.`,
-      middle: `${narratorCap} đi theo nguyên tắc: nhìn màu vỏ để ước lượng độ chín, kiểm tra cuống để đánh giá độ tươi, và cảm nhận độ đàn hồi để tránh trái bị bở hoặc úng. Hiểu đúng nguyên lý giúp bạn chọn chính xác hơn thay vì chọn theo cảm tính.`,
-      ending: `Khi nắm rõ các tiêu chí này, bạn có thể tự tin chọn ${topic} ngon và ổn định hơn mỗi lần mua. Nếu muốn học thêm theo từng loại trái, ghé ${sceneLocation.toLowerCase()} để ${narrator} chia sẻ tiếp nhé.`,
-    };
-  }
+async function loadReferenceImagePart(request: NextRequest, referenceImageUrl: string) {
+  const normalizedUrl = referenceImageUrl.trim();
+  const parsed = new URL(normalizedUrl, request.url);
 
   if (
-    normalized.includes("chia se meo") ||
-    normalized.includes("meo chon") ||
-    normalized.includes("meo")
+    parsed.origin === new URL(request.url).origin ||
+    parsed.pathname.startsWith("/uploads/")
   ) {
-    return {
-      opening: `Hôm nay ${narrator} chia sẻ mẹo chọn ${topic} nhanh - gọn - dễ nhớ ngay tại ${sceneLocation.toLowerCase()}, đi chợ bận mấy cũng áp dụng được.`,
-      middle: `Checklist 10 giây: nhìn bề mặt không dập, cầm thử thấy chắc tay, ngửi nhẹ có mùi tự nhiên và ưu tiên trái cùng lô để độ chín đồng đều. ${narratorCap} làm mẫu trực tiếp để bạn dùng ngay lần mua tới.`,
-      ending: `Bạn chỉ cần nhớ checklist này là đã giảm hẳn nguy cơ chọn nhầm ${topic}. Lưu lại video và ghé ${sceneLocation.toLowerCase()} nếu muốn ${narrator} tư vấn thêm mẹo theo mục đích sử dụng nhé.`,
-    };
+    const decodedPathname = decodeURIComponent(parsed.pathname);
+    const filePath = path.join(process.cwd(), "public", decodedPathname.replace(/^\//, ""));
+    const fileBuffer = await fs.readFile(filePath);
+    return createPartFromBase64(fileBuffer.toString("base64"), detectMimeType(filePath));
   }
 
-  if (normalized.includes("huong dan")) {
-    return {
-      opening: `Trong video này, ${narrator} sẽ hướng dẫn bạn chọn ${topic} ngon tại ${sceneLocation.toLowerCase()} chỉ với vài dấu hiệu rất dễ nhận biết.`,
-      middle: `Bước 1 kiểm tra vỏ và cuống, bước 2 thử độ chắc tay, bước 3 ngửi mùi hương tự nhiên. ${narratorCap} sẽ làm mẫu trực tiếp để bạn áp dụng ngay khi mua.`,
-      ending: `Bạn cứ lưu lại 3 bước này, lần tới chọn ${topic} sẽ tự tin hơn nhiều. Cần hỗ trợ thêm, ghé ${sceneLocation.toLowerCase()} nhé.`,
-    };
+  const response = await fetch(parsed.toString());
+  if (!response.ok) {
+    throw new Error(`Failed to fetch reference image: ${response.status}`);
   }
 
-  if (normalized.includes("so sanh")) {
-    return {
-      opening: `Hôm nay ${narrator} so sánh nhanh các nhóm ${topic} tại ${sceneLocation.toLowerCase()} để bạn chọn đúng theo nhu cầu dùng.`,
-      middle: `${narratorCap} phân biệt theo độ chín, độ ngọt và mục đích sử dụng: ăn trực tiếp, làm sinh tố hay làm topping món tráng miệng.`,
-      ending: `Khi đã nắm tiêu chí so sánh, bạn sẽ mua ${topic} chính xác hơn. Ghé ${sceneLocation.toLowerCase()} để ${narrator} tư vấn chi tiết tại quầy.`,
-    };
-  }
-
-  if (normalized.includes("ban hang") || normalized.includes("livestream")) {
-    return {
-      opening: `Xin chào cả nhà, hôm nay ${narrator} livestream giới thiệu ${topic} mới về tại ${sceneLocation.toLowerCase()}, hàng tươi và tuyển chọn theo lô.`,
-      middle: `${narratorCap} sẽ lên trái thực tế để bạn xem độ tươi, màu sắc và size. Nếu cần loại ăn ngọt hay loại làm nước ép, ${narrator} tư vấn theo nhu cầu luôn.`,
-      ending: `Bạn quan tâm ${topic} thì để lại nhu cầu, ${narrator} chốt theo lô phù hợp. Hoặc ghé trực tiếp ${sceneLocation.toLowerCase()} để xem hàng tận mắt.`,
-    };
-  }
-
-  if (normalized.includes("viral")) {
-    return {
-      opening: `Trend hôm nay tại ${sceneLocation.toLowerCase()}: ${topic} bản tươi ngon chuẩn quay cận cảnh, lên hình bắt mắt ngay từ khung đầu tiên.`,
-      middle: `${narratorCap} bật mí combo nội dung dễ lên xu hướng: cảnh bóc/cắt cận tay, âm thanh giòn rõ và mẹo chọn quả đẹp để lên video thật "đã mắt".`,
-      ending: `Nếu bạn muốn thử format viral với ${topic}, ghé ${sceneLocation.toLowerCase()} để ${narrator} gợi ý set quay phù hợp nhé!`,
-    };
-  }
-
-  if (normalized.includes("phong cach doi thuong")) {
-    return {
-      opening: `Một ngày bình thường ở ${sceneLocation.toLowerCase()}, ${narrator} chọn vài phần ${topic} tươi để dùng cho bữa nhẹ trong gia đình.`,
-      middle: `${narratorCap} ưu tiên trái dễ ăn, vị ổn định và tiện bảo quản. Cách chọn đơn giản nhưng giúp bữa phụ ngon và đỡ lãng phí hơn.`,
-      ending: `Đó là cách ${narrator} chọn ${topic} theo kiểu đời thường, dễ áp dụng mỗi ngày. Bạn có thể ghé ${sceneLocation.toLowerCase()} để tham khảo thêm.`,
-    };
-  }
-
-  if (normalized.includes("cam hung") || normalized.includes("tich cuc")) {
-    return {
-      opening: `Mỗi ngày tích cực bắt đầu từ lựa chọn tốt cho cơ thể. Hôm nay ${narrator} chọn ${topic} tại ${sceneLocation.toLowerCase()} để lan toả năng lượng lành mạnh.`,
-      middle: `${narratorCap} tin rằng ăn ngon và chăm sóc bản thân có thể bắt đầu từ những điều nhỏ: chọn trái tươi, dùng đúng lúc và chia sẻ cùng người thân.`,
-      ending: `Hy vọng video này truyền cảm hứng để bạn bắt đầu thói quen tốt với ${topic}. Khi cần, ghé ${sceneLocation.toLowerCase()} để ${narrator} hỗ trợ nhé!`,
-    };
-  }
-
-  if (normalized.includes("gioi thieu")) {
-    return {
-      opening: `Xin chào cả nhà! Hôm nay ${narrator} muốn giới thiệu ${topic} tươi ngon vừa về tại ${sceneLocation.toLowerCase()}.`,
-      middle: `${topic} có vị ngọt tự nhiên, mọng nước và phù hợp cho cả gia đình. ${narratorCap} sẽ gợi ý cách chọn quả ngon ngay tại quầy.`,
-      ending: `Cảm ơn bạn đã xem! Nếu thích ${topic}, ghé ${sceneLocation.toLowerCase()} để ${narrator} tư vấn thêm nhé!`,
-    };
-  }
-
-  return {
-    opening: `Xin chào cả nhà! Hôm nay ${narrator} muốn giới thiệu ${topic} tươi ngon vừa về tại ${sceneLocation.toLowerCase()}.`,
-    middle: `${topic} có vị ngọt tự nhiên, mọng nước và phù hợp cho cả gia đình. ${narratorCap} sẽ gợi ý cách chọn quả ngon ngay tại quầy.`,
-    ending: `Cảm ơn bạn đã xem! Nếu thích ${topic}, ghé ${sceneLocation.toLowerCase()} để ${narrator} tư vấn thêm nhé!`,
-  };
+  const mimeType = normalizeMimeType(response.headers.get("content-type")) || detectMimeType(parsed.pathname);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  return createPartFromBase64(buffer.toString("base64"), mimeType);
 }
 
-function normalizeToneKey(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/đ/g, "d")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ");
+function normalizeMimeType(value: string | null): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.split(";")[0]?.trim();
+  return normalized || undefined;
+}
+
+function detectMimeType(filePathOrName: string): string {
+  const lower = filePathOrName.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  return "image/jpeg";
+}
+
+function buildGeminiScriptPrompt(input: {
+  topic: string;
+  characterDescription: string;
+  characterType: string;
+  sceneLocation: string;
+  voiceType: "Nam" | "Nữ";
+  videoGenre: string;
+  contentTone: string;
+  numberOfScenes: number;
+  referenceImageName?: string;
+  referenceImageSource?: "upload" | "url";
+  hasReferenceImage: boolean;
+}): string {
+  const sourceLabel =
+    input.referenceImageSource === "upload"
+      ? "ảnh upload từ máy"
+      : input.referenceImageSource === "url"
+      ? "ảnh từ URL"
+      : "ảnh tham chiếu";
+
+  const referenceBlock = input.hasReferenceImage
+    ? [
+        `Ảnh tham chiếu: ${sourceLabel}.`,
+        input.referenceImageName ? `Tên file: ${input.referenceImageName}.` : "",
+        "Hãy quan sát ảnh để nhận biết trái cây, màu sắc, độ tươi, kiểu bối cảnh và gợi ý nội dung phù hợp nhất với ảnh.",
+        "Nếu ảnh có trái cây cụ thể, ưu tiên đúng loại trái cây đó trong kịch bản.",
+        "Nếu ảnh chứa nhiều chi tiết, hãy chọn chi tiết chính làm trọng tâm quảng cáo/video.",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : "";
+
+  return [
+    "Bạn là biên kịch video ngắn chuyên nghiệp cho nội dung trái cây bán hàng.",
+    "Mục tiêu chính là tạo kịch bản giúp người xem muốn mua, tin sản phẩm và hiểu nhanh điểm nổi bật của trái cây.",
+    `Chủ đề: ${input.topic}.`,
+    `Nhân vật: ${input.characterType}.`,
+    `Mô tả nhân vật: ${input.characterDescription}.`,
+    `Bối cảnh mong muốn: ${input.sceneLocation}.`,
+    `Thể loại: ${input.videoGenre}.`,
+    `Tông nội dung: ${input.contentTone}.`,
+    `Giới tính voiceover: ${input.voiceType}.`,
+    `Số cảnh mong muốn: khoảng ${input.numberOfScenes} cảnh.`,
+    referenceBlock,
+    "",
+    "Yêu cầu đầu ra:",
+    "- Viết bằng tiếng Việt tự nhiên, phù hợp video ngắn bán trái cây.",
+    "- Ưu tiên kịch bản theo cấu trúc bán hàng: Hook mở đầu mạnh -> giới thiệu sản phẩm -> nêu lợi ích/điểm khác biệt -> chốt CTA.",
+    "- Nhấn các yếu tố giúp bán hàng: độ tươi, màu sắc, độ mọng, độ ngọt, nguồn gốc, độ đẹp mắt khi lên hình, cảm giác đáng mua.",
+    "- Nếu ảnh tham chiếu là trái cây cụ thể, phải giữ đúng loại trái cây đó làm trung tâm nội dung.",
+    "- Nếu phù hợp, thêm gợi ý cho người xem: mua để ăn ngay, biếu tặng, làm sinh tố, làm món tráng miệng hoặc dùng cho gia đình.",
+    "- Không phóng đại quá mức hoặc hứa hẹn sai sự thật; ngôn ngữ nên thuyết phục nhưng vẫn tự nhiên.",
+    "- Chia rõ thành từng cảnh theo format:",
+    "  SCENE 1",
+    "  VISUAL PROMPT: [mô tả cảnh quay bằng tiếng Việt, ngắn gọn, rõ hành động, góc máy, ánh sáng, bối cảnh]",
+    "  VOICEOVER: [lời thoại tiếng Việt]",
+    "- Toàn bộ đầu ra phải là tiếng Việt, bao gồm cả VISUAL PROMPT và VOICEOVER.",
+    "- Mỗi cảnh nên ngắn, dễ đọc, dễ thu âm, nhịp nói tự nhiên.",
+    "- Nếu có ảnh tham chiếu, kịch bản phải bám theo ảnh và không đi lệch quá xa nội dung ảnh.",
+    "- Không viết phần giải thích, chỉ trả về kịch bản hoàn chỉnh.",
+    "- Đảm bảo câu chữ phù hợp để dùng ngay cho tạo video.",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function buildDefaultCharacterDescription(
