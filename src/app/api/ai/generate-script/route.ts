@@ -65,6 +65,15 @@ export async function POST(request: NextRequest) {
       hasReferenceImage: Boolean(imagePart),
     });
 
+    const instructionBlock = [
+      "Bạn là biên kịch video bán trái cây.",
+      "Luôn trả lời bằng tiếng Việt.",
+      "Không được viết ngắn cụt.",
+      "Phải tạo kịch bản đủ dài, có cấu trúc rõ ràng theo từng cảnh.",
+      "Mỗi cảnh cần có mô tả hình ảnh và lời thoại đầy đủ.",
+      "Chỉ trả về kịch bản, không giải thích.",
+    ].join(" ");
+
     const model = genAI.models as unknown as {
       generateContent: (args: {
         model: string;
@@ -73,29 +82,69 @@ export async function POST(request: NextRequest) {
           temperature?: number;
           topP?: number;
           maxOutputTokens?: number;
-          responseMimeType?: string;
         };
       }) => Promise<{ text?: string }>;
     };
 
     const contents = imagePart
-      ? [{ role: "user", parts: [createPartFromText(prompt), imagePart] }]
-      : prompt;
+      ? [{ role: "user", parts: [createPartFromText(`${instructionBlock}\n\n${prompt}`), imagePart] }]
+      : `${instructionBlock}\n\n${prompt}`;
 
     const result = await model.generateContent({
       model: "gemini-2.5-flash",
       contents,
       config: {
-        temperature: 0.7,
+        temperature: 0.55,
         topP: 0.95,
-        maxOutputTokens: 1024,
-        responseMimeType: "text/plain",
+        maxOutputTokens: 2048,
       },
     });
 
-    const script = result.text?.trim();
+    let script = result.text?.trim();
     if (!script) {
       throw new Error("Gemini returned an empty script response");
+    }
+
+    const requestedScenes = Math.max(2, Math.min(6, numberOfScenes));
+    if (countScenes(script) < requestedScenes) {
+      const strictPrompt = [
+        `${instructionBlock}`,
+        "",
+        `${prompt}`,
+        "",
+        "YÊU CẦU BẮT BUỘC (KHÔNG ĐƯỢC SAI):",
+        `- Viết đúng ${requestedScenes} cảnh, đánh số chính xác từ SCENE 1 đến SCENE ${requestedScenes}.`,
+        "- Mỗi cảnh đều phải có đủ 2 mục: VISUAL PROMPT và VOICEOVER.",
+        "- Không được dừng giữa câu, không được trả về bản nháp ngắn.",
+        "- Chỉ trả về kịch bản hoàn chỉnh.",
+        "",
+        "Bản nháp chưa đạt (hãy viết lại đầy đủ):",
+        script,
+      ].join("\n");
+
+      const retryResult = await model.generateContent({
+        model: "gemini-2.5-flash",
+        contents: strictPrompt,
+        config: {
+          temperature: 0.45,
+          topP: 0.9,
+          maxOutputTokens: 2048,
+        },
+      });
+
+      const retriedScript = retryResult.text?.trim();
+      if (retriedScript) {
+        script = retriedScript;
+      }
+    }
+
+    if (countScenes(script) < requestedScenes) {
+      script = buildDeterministicSceneFallback({
+        topic,
+        sceneLocation,
+        characterType,
+        numberOfScenes: requestedScenes,
+      });
     }
 
     return NextResponse.json({
@@ -208,6 +257,11 @@ function buildGeminiScriptPrompt(input: {
     "- Nếu ảnh tham chiếu là trái cây cụ thể, phải giữ đúng loại trái cây đó làm trung tâm nội dung.",
     "- Nếu phù hợp, thêm gợi ý cho người xem: mua để ăn ngay, biếu tặng, làm sinh tố, làm món tráng miệng hoặc dùng cho gia đình.",
     "- Không phóng đại quá mức hoặc hứa hẹn sai sự thật; ngôn ngữ nên thuyết phục nhưng vẫn tự nhiên.",
+    "- Kịch bản phải dài hơn một đoạn giới thiệu bình thường. Với 3 cảnh, mỗi cảnh tối thiểu 2-3 câu thoại và 1-2 câu mô tả hình ảnh. Với 4 cảnh, mỗi cảnh tối thiểu 2 câu thoại và 1-2 câu mô tả hình ảnh.",
+    "- Mỗi cảnh phải có chi tiết khác nhau, không lặp ý giữa các cảnh.",
+    "- Cảnh đầu: hook mạnh và giới thiệu sản phẩm.",
+    "- Cảnh giữa: mô tả đặc điểm trái cây, lợi ích, cảm giác mua hàng.",
+    "- Cảnh cuối: chốt CTA rõ ràng, khuyến khích mua hoặc ghé cửa hàng.",
     "- Chia rõ thành từng cảnh theo format:",
     "  SCENE 1",
     "  VISUAL PROMPT: [mô tả cảnh quay bằng tiếng Việt, ngắn gọn, rõ hành động, góc máy, ánh sáng, bối cảnh]",
@@ -217,6 +271,7 @@ function buildGeminiScriptPrompt(input: {
     "- Nếu có ảnh tham chiếu, kịch bản phải bám theo ảnh và không đi lệch quá xa nội dung ảnh.",
     "- Không viết phần giải thích, chỉ trả về kịch bản hoàn chỉnh.",
     "- Đảm bảo câu chữ phù hợp để dùng ngay cho tạo video.",
+    "- Nếu có thể, tạo ra ít nhất 120-180 từ cho 3 cảnh hoặc 180-260 từ cho 4 cảnh.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -264,4 +319,46 @@ function buildDefaultCharacterDescription(
   }
 
   return `Nhân vật giới thiệu tại ${sceneLocation}, phong cách gần gũi, diễn đạt mạch lạc và tập trung vào thông tin hữu ích cho người mua.`;
+}
+
+function countScenes(script: string): number {
+  return (script.match(/(^|\n)\s*SCENE\s+\d+/gi) || []).length;
+}
+
+function buildDeterministicSceneFallback(input: {
+  topic: string;
+  sceneLocation: string;
+  characterType: string;
+  numberOfScenes: number;
+}): string {
+  const scenes: string[] = [];
+
+  for (let index = 1; index <= input.numberOfScenes; index += 1) {
+    const isFirst = index === 1;
+    const isLast = index === input.numberOfScenes;
+
+    let visualPrompt = "";
+    let voiceover = "";
+
+    if (isFirst) {
+      visualPrompt = `Toàn cảnh ${input.sceneLocation}, quầy trái cây rực rỡ ánh sáng, máy quay tiến gần đến ${input.characterType} đang cầm ${input.topic} tươi ngon.`;
+      voiceover = `Xin chào bạn, hôm nay tại ${input.sceneLocation}, chúng tôi giới thiệu ${input.topic} tươi ngon, mọng nước và cực kỳ bắt mắt. Nếu bạn đang tìm loại trái cây dễ ăn, dễ dùng cho gia đình thì đây là lựa chọn rất đáng thử.`;
+    } else if (isLast) {
+      visualPrompt = `Cận cảnh ${input.topic} được đóng gói sạch đẹp tại ${input.sceneLocation}, nhân vật mỉm cười chào và chỉ vào quầy hàng.`;
+      voiceover = `${input.topic} hiện có sẵn tại ${input.sceneLocation} với chất lượng tuyển chọn mỗi ngày. Ghé cửa hàng để được tư vấn loại phù hợp nhu cầu và chọn ngay những phần trái cây tươi ngon nhất.`;
+    } else {
+      visualPrompt = `Các góc quay cận cảnh ${input.topic}: màu sắc, độ căng mọng và độ tươi; xen kẽ cảnh ${input.characterType} tư vấn trực tiếp tại quầy.`;
+      voiceover = `${input.topic} có vị ngon tự nhiên, dễ dùng để ăn trực tiếp, làm sinh tố hoặc chuẩn bị món tráng miệng cho cả nhà. Chúng tôi ưu tiên chọn trái đều màu, tươi mới để bạn yên tâm khi mua và sử dụng.`;
+    }
+
+    scenes.push(
+      [
+        `SCENE ${index}`,
+        `VISUAL PROMPT: ${visualPrompt}`,
+        `VOICEOVER: ${voiceover}`,
+      ].join("\n")
+    );
+  }
+
+  return scenes.join("\n\n");
 }

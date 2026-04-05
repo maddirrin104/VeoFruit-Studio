@@ -29,7 +29,6 @@ const topicTypes = [
 ];
 
 const CHARACTER_DESCRIPTION_MAX_LENGTH = 220;
-const CUSTOM_OPTION_VALUE = "__custom__";
 
 const characterTypeOptions = [
   "Nữ tư vấn viên cửa hàng trái cây",
@@ -104,17 +103,27 @@ export function ContentEditorSection({
   onRandomizeScript,
 }: ContentEditorSectionProps) {
   const [isScriptReaderOpen, setIsScriptReaderOpen] = useState(false);
-  const characterTypeSelectValue = characterTypeOptions.includes(
+  const [characterEntryMode, setCharacterEntryMode] = useState<"preset" | "custom">(
+    characterTypeOptions.includes(characterType as (typeof characterTypeOptions)[number])
+      ? "preset"
+      : "custom"
+  );
+  const [sceneEntryMode, setSceneEntryMode] = useState<"preset" | "custom">(
+    sceneLocationOptions.includes(sceneLocation as (typeof sceneLocationOptions)[number])
+      ? "preset"
+      : "custom"
+  );
+  const characterTypePresetValue = characterTypeOptions.includes(
     characterType as (typeof characterTypeOptions)[number]
   )
     ? characterType
-    : CUSTOM_OPTION_VALUE;
+    : characterTypeOptions[0];
 
-  const sceneLocationSelectValue = sceneLocationOptions.includes(
+  const sceneLocationPresetValue = sceneLocationOptions.includes(
     sceneLocation as (typeof sceneLocationOptions)[number]
   )
     ? sceneLocation
-    : CUSTOM_OPTION_VALUE;
+    : sceneLocationOptions[0];
 
   const scriptMeta = useMemo(() => {
     const lines = script
@@ -145,46 +154,92 @@ export function ContentEditorSection({
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <FieldLabel>Nhân vật</FieldLabel>
-              <SelectField
-                value={characterTypeSelectValue}
-                onChange={(value) => {
-                  if (value !== CUSTOM_OPTION_VALUE) {
-                    onCharacterTypeChange(value);
-                  }
-                }}
-                options={[
-                  ...characterTypeOptions,
-                  { label: "Tự nhập...", value: CUSTOM_OPTION_VALUE },
-                ]}
-              />
-              <TextInput
-                placeholder="Hoặc tự nhập nhân vật, ví dụ: Chủ quầy trái cây thân thiện, nói gần gũi..."
-                value={characterType}
-                onChange={(event) => onCharacterTypeChange(event.target.value)}
-              />
+            <div className="space-y-3 rounded-2xl border border-[#d0eadc] bg-[#f3faf6] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]">
+              <div className="flex items-center justify-between gap-3">
+                <FieldLabel>Nhân vật</FieldLabel>
+                <div className="inline-flex rounded-full border border-[#c5e5d3] bg-white p-1 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => setCharacterEntryMode("preset")}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                      characterEntryMode === "preset"
+                        ? "bg-[#10b862] text-white shadow-[0_6px_14px_rgba(16,184,98,0.22)]"
+                        : "text-[#2f7056] hover:bg-[#eff8f2]"
+                    }`}
+                  >
+                    Mẫu có sẵn
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCharacterEntryMode("custom")}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                      characterEntryMode === "custom"
+                        ? "bg-[#10b862] text-white shadow-[0_6px_14px_rgba(16,184,98,0.22)]"
+                        : "text-[#2f7056] hover:bg-[#eff8f2]"
+                    }`}
+                  >
+                    Tự nhập
+                  </button>
+                </div>
+              </div>
+
+              {characterEntryMode === "preset" ? (
+                <SelectField
+                  value={characterTypePresetValue}
+                  onChange={onCharacterTypeChange}
+                  options={[...characterTypeOptions]}
+                />
+              ) : (
+                <TextInput
+                  placeholder="VD: Chủ quầy trái cây thân thiện, nói gần gũi..."
+                  value={characterType}
+                  onChange={(event) => onCharacterTypeChange(event.target.value)}
+                />
+              )}
             </div>
 
-            <div className="space-y-2">
-              <FieldLabel>Bối cảnh</FieldLabel>
-              <SelectField
-                value={sceneLocationSelectValue}
-                onChange={(value) => {
-                  if (value !== CUSTOM_OPTION_VALUE) {
-                    onSceneLocationChange(value);
-                  }
-                }}
-                options={[
-                  ...sceneLocationOptions,
-                  { label: "Tự nhập...", value: CUSTOM_OPTION_VALUE },
-                ]}
-              />
-              <TextInput
-                placeholder="Hoặc tự nhập bối cảnh, ví dụ: Cửa hàng hoa quả sạch Minh Lâm..."
-                value={sceneLocation}
-                onChange={(event) => onSceneLocationChange(event.target.value)}
-              />
+            <div className="space-y-3 rounded-2xl border border-[#d0eadc] bg-[#f3faf6] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]">
+              <div className="flex items-center justify-between gap-3">
+                <FieldLabel>Bối cảnh</FieldLabel>
+                <div className="inline-flex rounded-full border border-[#c5e5d3] bg-white p-1 shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => setSceneEntryMode("preset")}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                      sceneEntryMode === "preset"
+                        ? "bg-[#10b862] text-white shadow-[0_6px_14px_rgba(16,184,98,0.22)]"
+                        : "text-[#2f7056] hover:bg-[#eff8f2]"
+                    }`}
+                  >
+                    Mẫu có sẵn
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSceneEntryMode("custom")}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                      sceneEntryMode === "custom"
+                        ? "bg-[#10b862] text-white shadow-[0_6px_14px_rgba(16,184,98,0.22)]"
+                        : "text-[#2f7056] hover:bg-[#eff8f2]"
+                    }`}
+                  >
+                    Tự nhập
+                  </button>
+                </div>
+              </div>
+
+              {sceneEntryMode === "preset" ? (
+                <SelectField
+                  value={sceneLocationPresetValue}
+                  onChange={onSceneLocationChange}
+                  options={[...sceneLocationOptions]}
+                />
+              ) : (
+                <TextInput
+                  placeholder="VD: Cửa hàng hoa quả sạch Minh Lâm..."
+                  value={sceneLocation}
+                  onChange={(event) => onSceneLocationChange(event.target.value)}
+                />
+              )}
             </div>
           </div>
 
