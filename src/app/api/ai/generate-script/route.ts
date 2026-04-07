@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
         "",
         "YÊU CẦU BẮT BUỘC (KHÔNG ĐƯỢC SAI):",
         `- Viết đúng ${requestedScenes} cảnh, đánh số chính xác từ SCENE 1 đến SCENE ${requestedScenes}.`,
-        "- Mỗi cảnh đều phải có đủ 2 mục: VISUAL PROMPT và VOICEOVER.",
+        "- Mỗi cảnh đều phải có đủ 2 mục: Cảnh quay và Lời thoại.",
         "- Không được dừng giữa câu, không được trả về bản nháp ngắn.",
         "- Chỉ trả về kịch bản hoàn chỉnh.",
         "",
@@ -264,9 +264,9 @@ function buildGeminiScriptPrompt(input: {
     "- Cảnh cuối: chốt CTA rõ ràng, khuyến khích mua hoặc ghé cửa hàng.",
     "- Chia rõ thành từng cảnh theo format:",
     "  SCENE 1",
-    "  VISUAL PROMPT: [mô tả cảnh quay bằng tiếng Việt, ngắn gọn, rõ hành động, góc máy, ánh sáng, bối cảnh]",
-    "  VOICEOVER: [lời thoại tiếng Việt]",
-    "- Toàn bộ đầu ra phải là tiếng Việt, bao gồm cả VISUAL PROMPT và VOICEOVER.",
+    "  Cảnh quay: [mô tả cảnh quay bằng tiếng Việt, ngắn gọn, rõ hành động, góc máy, ánh sáng, bối cảnh]",
+    "  Lời thoại: [lời thoại tiếng Việt]",
+    "- Toàn bộ đầu ra phải là tiếng Việt, bao gồm cả Cảnh quay và Lời thoại.",
     "- Mỗi cảnh nên ngắn, dễ đọc, dễ thu âm, nhịp nói tự nhiên.",
     "- Nếu có ảnh tham chiếu, kịch bản phải bám theo ảnh và không đi lệch quá xa nội dung ảnh.",
     "- Không viết phần giải thích, chỉ trả về kịch bản hoàn chỉnh.",
@@ -354,8 +354,8 @@ function buildDeterministicSceneFallback(input: {
     scenes.push(
       [
         `SCENE ${index}`,
-        `VISUAL PROMPT: ${visualPrompt}`,
-        `VOICEOVER: ${voiceover}`,
+        `Cảnh quay: ${visualPrompt}`,
+        `Lời thoại: ${voiceover}`,
       ].join("\n")
     );
   }

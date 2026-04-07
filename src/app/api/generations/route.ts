@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenAI } from "@google/genai";
 import { prisma } from "@/lib/prisma";
 import { buildVideoPrompt } from "@/lib/veo3";
 import { promises as fs } from "node:fs";
@@ -25,9 +26,116 @@ import {
 } from "@/lib/audio-postprocess";
 import { CreateGenerationRequest } from "@/types/studio";
 
+const googleApiKey = process.env.GOOGLE_API_KEY;
+const genAI = googleApiKey ? new GoogleGenAI({ apiKey: googleApiKey, apiVersion: "v1" }) : null;
+
 type VideoProjectRecord = NonNullable<
   Awaited<ReturnType<typeof prisma.videoProject.findUnique>>
 >;
+
+type PromptContext = {
+  storyTopic?: string;
+  script?: string;
+  characterDescription?: string;
+  characterType?: string;
+  contentTone?: string;
+  videoGenre?: string;
+  sceneLocation?: string;
+  narrationGuide?: string;
+  numberOfScenes?: number;
+};
+
+type TranslatedPromptContext = Pick<
+  PromptContext,
+  | "storyTopic"
+  | "script"
+  | "characterDescription"
+  | "characterType"
+  | "contentTone"
+  | "videoGenre"
+  | "sceneLocation"
+  | "narrationGuide"
+>;
+
+function stripCodeFences(text: string): string {
+  return text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "")
+    .trim();
+}
+
+async function translatePromptContextToEnglish(
+  context: PromptContext
+): Promise<TranslatedPromptContext> {
+  if (!genAI) {
+    return context;
+  }
+
+  const payload = {
+    storyTopic: context.storyTopic ?? "",
+    script: context.script ?? "",
+    characterDescription: context.characterDescription ?? "",
+    characterType: context.characterType ?? "",
+    contentTone: context.contentTone ?? "",
+    videoGenre: context.videoGenre ?? "",
+    sceneLocation: context.sceneLocation ?? "",
+    narrationGuide: context.narrationGuide ?? "",
+  };
+
+  const model = genAI.models as unknown as {
+    generateContent: (args: {
+      model: string;
+      contents: string;
+      config?: {
+        temperature?: number;
+        topP?: number;
+        maxOutputTokens?: number;
+      };
+    }) => Promise<{ text?: string }>;
+  };
+
+  try {
+    const result = await model.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        "Translate the following Vietnamese fruit-video planning data into concise natural English for an AI video generation prompt.",
+        "Keep the exact product identity unchanged. If the topic is strawberry, keep it strawberry and never replace it with apple or any other fruit.",
+        "Preserve meaning, scene order, tone, and character intent.",
+        "Output JSON only with the same keys as the input.",
+        "Do not add markdown, code fences, explanations, or extra keys.",
+        "Input JSON:",
+        JSON.stringify(payload),
+      ].join("\n"),
+      config: {
+        temperature: 0.2,
+        topP: 0.9,
+        maxOutputTokens: 1200,
+      },
+    });
+
+    const rawText = result.text?.trim();
+    if (!rawText) {
+      return context;
+    }
+
+    const parsed = JSON.parse(stripCodeFences(rawText)) as Partial<TranslatedPromptContext>;
+
+    return {
+      storyTopic: parsed.storyTopic?.trim() || context.storyTopic,
+      script: parsed.script?.trim() || context.script,
+      characterDescription: parsed.characterDescription?.trim() || context.characterDescription,
+      characterType: parsed.characterType?.trim() || context.characterType,
+      contentTone: parsed.contentTone?.trim() || context.contentTone,
+      videoGenre: parsed.videoGenre?.trim() || context.videoGenre,
+      sceneLocation: parsed.sceneLocation?.trim() || context.sceneLocation,
+      narrationGuide: parsed.narrationGuide?.trim() || context.narrationGuide,
+    };
+  } catch (error) {
+    console.warn("[Generation] Prompt translation failed, falling back to Vietnamese prompt:", error);
+    return context;
+  }
+}
 
 function getAudioUrlFromVoiceSettings(voiceSettings: Prisma.JsonValue | null): string | undefined {
   if (!voiceSettings || typeof voiceSettings !== "object" || Array.isArray(voiceSettings)) {
@@ -52,7 +160,7 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as CreateGenerationRequest;
 
     const { projectId, videoConfig, imageConfig, audioConfig } = body;
-    const promptContext = {
+    const promptContext: PromptContext = {
       storyTopic: body.storyTopic,
       script: body.script,
       characterDescription: body.characterDescription,
@@ -245,26 +353,31 @@ async function generateVideoInBackground(
       readSpeed: audioConfig.readSpeed,
     });
 
+    const translatedPromptContext = await translatePromptContextToEnglish({
+      ...promptContext,
+      narrationGuide: narrationTextForSync,
+    });
+
     // Build the prompt from script and config
     const prompt = buildVideoPrompt(
-      promptContext.script || promptContext.storyTopic || project.storyTopic || "Fruit product video",
+      translatedPromptContext.script || translatedPromptContext.storyTopic || project.storyTopic || "Fruit product video",
       imageConfig.emotionStyle,
       imageConfig.visualStyle,
       imageConfig.motionIntensity,
       {
-        storyTopic: promptContext.storyTopic || project.storyTopic,
-        characterDescription: promptContext.characterDescription,
-        characterType: promptContext.characterType,
-        contentTone: promptContext.contentTone,
-        videoGenre: promptContext.videoGenre,
-        sceneLocation: promptContext.sceneLocation,
+        storyTopic: translatedPromptContext.storyTopic || project.storyTopic,
+        characterDescription: translatedPromptContext.characterDescription,
+        characterType: translatedPromptContext.characterType,
+        contentTone: translatedPromptContext.contentTone,
+        videoGenre: translatedPromptContext.videoGenre,
+        sceneLocation: translatedPromptContext.sceneLocation,
         numberOfScenes: promptContext.numberOfScenes,
         transitionEnabled: imageConfig.transitionEnabled,
         subjectConsistent: effectiveSubjectConsistent,
         hasReferenceImage,
         referenceImageSource,
         referenceImageName,
-        narrationGuide: narrationTextForSync,
+        narrationGuide: translatedPromptContext.narrationGuide || narrationTextForSync,
       }
     );
 

@@ -25,12 +25,51 @@ export interface MixBackgroundMusicOptions {
   outputExtension?: "mp3" | "wav";
 }
 
-function resolveFfmpegBinaryPath(): string {
-  if (!ffmpegPath) {
-    throw new Error("ffmpeg-static binary path is not available");
+function normalizeRootAliasPath(inputPath: string): string {
+  if (!inputPath) {
+    return inputPath;
   }
 
-  return ffmpegPath;
+  // Next server runtime may return paths like /ROOT/node_modules/... from bundled modules.
+  if (/^[\\/]+ROOT[\\/]/i.test(inputPath)) {
+    return path.join(process.cwd(), inputPath.replace(/^[\\/]+ROOT[\\/]?/i, ""));
+  }
+
+  return inputPath;
+}
+
+async function canAccessFile(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveFfmpegBinaryPath(): Promise<string> {
+  const candidates: string[] = [];
+
+  if (ffmpegPath) {
+    candidates.push(ffmpegPath);
+    candidates.push(normalizeRootAliasPath(ffmpegPath));
+  }
+
+  const platformBinary = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+  candidates.push(path.join(process.cwd(), "node_modules", "ffmpeg-static", platformBinary));
+
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+
+    if (await canAccessFile(candidate)) {
+      return candidate;
+    }
+  }
+
+  // Final fallback to system PATH if ffmpeg is installed globally.
+  return "ffmpeg";
 }
 
 function buildTempPath(extension: string): string {
@@ -38,7 +77,7 @@ function buildTempPath(extension: string): string {
 }
 
 async function runFfmpeg(args: string[]): Promise<string> {
-  const binary = resolveFfmpegBinaryPath();
+  const binary = await resolveFfmpegBinaryPath();
 
   return new Promise((resolve, reject) => {
     const process = spawn(binary, args, {

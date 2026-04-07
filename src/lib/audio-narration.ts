@@ -10,24 +10,35 @@ export interface NarrationContextInput {
 }
 
 export function extractDialogueLinesFromScript(script: string): string[] {
-  const dialogueLines = script
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => /^(LỜI THOẠI|LOI THOAI)\s*:/i.test(line))
-    .map((line) => line.replace(/^(LỜI THOẠI|LOI THOAI)\s*:\s*/i, ""))
-    .map((line) => line.replace(/^"|"$/g, ""))
+  const normalizedScript = script.replace(/\r\n/g, "\n");
+  const sceneBlocks = normalizedScript
+    .split(/(^|\n)\s*SCENE\s+\d+\s*/gi)
+    .map((block) => block.trim())
     .filter(Boolean);
 
-  if (dialogueLines.length > 0) {
-    return dialogueLines;
+  const orderedDialogueLines: string[] = [];
+
+  for (const block of sceneBlocks.length > 0 ? sceneBlocks : [normalizedScript]) {
+    const blockDialogueLines = block
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => /^(LỜI THOẠI|LOI THOAI)\s*:/i.test(line))
+      .map((line) => line.replace(/^(LỜI THOẠI|LOI THOAI)\s*:\s*/i, ""))
+      .map((line) => line.replace(/^"|"$/g, ""))
+      .filter(Boolean);
+
+    orderedDialogueLines.push(...blockDialogueLines);
   }
 
-  return script
-    .replace(/SCENE\s*\d+[^\n]*/gi, "")
-    .replace(/(BỐI CẢNH|BOI CANH|NHÂN VẬT|NHAN VAT|HÌNH ẢNH|HINH ANH)\s*:/gi, "")
-    .split(/[.!?]+/)
-    .map((part) => part.trim())
+  if (orderedDialogueLines.length > 0) {
+    return orderedDialogueLines;
+  }
+
+  const inlineDialogueMatches = [...normalizedScript.matchAll(/(?:^|\n)\s*(?:LỜI THOẠI|LOI THOAI)\s*:\s*([^\n]+)/gi)]
+    .map((match) => match[1]?.trim().replace(/^"|"$/g, "") || "")
     .filter(Boolean);
+
+  return inlineDialogueMatches;
 }
 
 function estimateWordsPerMinute(language: string): number {
