@@ -105,6 +105,47 @@ function detectFruitAnchor(...inputs: Array<string | undefined>): string | undef
   return undefined;
 }
 
+function buildLocationLockHints(sceneLocation?: string): string[] {
+  const normalized = (sceneLocation || "").trim().toLowerCase();
+  if (!normalized) {
+    return [];
+  }
+
+  const hints = [
+    "Location lock (critical, must follow):",
+    `- Selected location: ${sceneLocation}.`,
+    "- All scenes must remain in this selected location context.",
+    "- Do not switch to a different place category than selected.",
+  ];
+
+  if (normalized.includes("nông trại") || normalized.includes("nong trai") || normalized.includes("farm")) {
+    hints.push("- Use farm visuals only: orchard rows, cultivation area, harvest/basket zones, and farm pathways.");
+    hints.push("- Forbidden location shifts: market stalls, supermarket aisles, shopping mall counters, urban store interiors.");
+  }
+
+  if (normalized.includes("chợ") || normalized.includes("cho")) {
+    hints.push("- Keep market context consistently: stalls, handwritten price signs, open-air market rhythm.");
+    hints.push("- Forbidden location shifts: farm fields, supermarket aisles, studio kitchen sets.");
+  }
+
+  if (normalized.includes("siêu thị") || normalized.includes("sieu thi") || normalized.includes("trung tâm thương mại") || normalized.includes("trung tam thuong mai")) {
+    hints.push("- Keep modern retail context consistently: clean counters, indoor commercial lighting, shelf organization.");
+    hints.push("- Forbidden location shifts: open-air market scenes and farm field/orchard scenes.");
+  }
+
+  if (normalized.includes("cửa hàng") || normalized.includes("cua hang") || normalized.includes("shop")) {
+    hints.push("- Keep small fruit-shop context consistently: compact storefront vibe, close seller-customer distance.");
+    hints.push("- Forbidden location shifts: farm orchards and supermarket aisle look.");
+  }
+
+  if (normalized.includes("bếp") || normalized.includes("bep") || normalized.includes("kitchen")) {
+    hints.push("- Keep home-kitchen context consistently: countertop prep, family-home atmosphere.");
+    hints.push("- Forbidden location shifts: market stalls, farm fields, supermarket aisle look.");
+  }
+
+  return hints;
+}
+
 interface GeneratedVideoFile {
   uri?: string;
   name?: string;
@@ -305,14 +346,19 @@ export function buildVideoPrompt(
       ? otherDetails.narrationGuide.replace(/\s+/g, " ").trim().slice(0, 420)
       : "";
 
+  const selectedSceneLocation =
+    typeof otherDetails?.sceneLocation === "string" ? otherDetails.sceneLocation.trim() : "";
+  const locationLockHints = buildLocationLockHints(selectedSceneLocation);
+
   // Keep style directives first so they survive provider-side prompt trimming.
   const directionBlock = [
     "Create a professional fruit product video.",
     "Cultural direction (must follow):",
     "- Prioritize Vietnamese context, lifestyle, and consumer taste.",
-    "- Visual cues should feel local to Vietnam: market stalls, neighborhood fruit shops, tropical farm context, Vietnamese signage style (no readable brand names).",
+    "- Visual cues should feel local to Vietnam and strictly align with the selected scene location.",
     "- Keep wardrobe, gestures, and pacing natural for Vietnamese audience; avoid overly Western styling.",
     "- Skin tones, lighting, props, and food presentation should feel authentic to Vietnam.",
+    ...locationLockHints,
     ...productLockHints,
     `Visual style: ${visualStyle}.`,
     `Emotional tone: ${emotionStyle}.`,
@@ -355,10 +401,10 @@ export function buildVideoPrompt(
 
   // Reserve room for style controls by capping script payload before outer truncation.
   const normalizedScript = script.replace(/\s+/g, " ").trim();
-  const maxScriptChars = 560;
+  const maxScriptChars = 760;
   const scriptExcerpt =
     normalizedScript.length > maxScriptChars
-      ? `${normalizedScript.slice(0, 360)} ... ${normalizedScript.slice(-180)}`
+      ? `${normalizedScript.slice(0, 430)} ... ${normalizedScript.slice(-290)}`
       : normalizedScript;
 
   const spokenLinesBlock = narrationGuide

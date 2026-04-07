@@ -7,6 +7,7 @@ import {
   isFptConfigured,
   type VoiceType,
 } from "@/lib/fpt-tts";
+import { extractDialogueLinesFromScript } from "@/lib/audio-narration";
 
 interface PreviewVoiceRequest {
   script?: string;
@@ -22,34 +23,78 @@ interface PreviewVoiceRequest {
 
 const AUDIO_OUTPUT_DIR = path.join(process.cwd(), "public", "generated-audio");
 
-function buildPreviewText(language: string, storyTopic?: string, script?: string): string {
-  const topic = storyTopic?.trim() || "trái cây tươi";
-  const scriptSnippet = script
-    ?.split(/\r?\n/)
-    .map((line) => line.trim())
-    .find(Boolean);
+function normalizeSpacing(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
 
-  if (scriptSnippet) {
-    return scriptSnippet.slice(0, 180);
+function enforceMinimumPreviewLength(text: string, language: string, topic: string): string {
+  const normalized = normalizeSpacing(text);
+  const words = normalized.split(" ").filter(Boolean).length;
+  if (words >= 14 && normalized.length >= 70) {
+    return normalized;
   }
 
   if (language === "English") {
-    return `Hello, this is a sample voice for your ${topic} video. Please pick the voice style that feels most natural for your audience.`;
+    return `${normalized} This is an additional sample sentence so you can hear the voice tone, pacing, and natural pronunciation more clearly.`;
   }
 
   if (language === "한국어") {
-    return "안녕하세요. 이것은 음성 미리듣기 샘플입니다. 영상 분위기에 가장 잘 맞는 목소리를 선택해 주세요.";
+    return `${normalized} 음색과 속도, 발음의 자연스러움을 더 정확히 확인할 수 있도록 샘플 문장을 추가로 들려드립니다.`;
   }
 
   if (language === "日本語") {
-    return "こんにちは。こちらは音声プレビューのサンプルです。動画の雰囲気に合う声を選んでください。";
+    return `${normalized} 声の質感や話すスピード、発音の自然さを確認しやすいように、追加のサンプル文を読み上げます。`;
+  }
+
+  return `${normalized} Đây là câu mẫu bổ sung để bạn nghe rõ hơn chất giọng, tốc độ đọc và độ tự nhiên của phát âm cho video ${topic}.`;
+}
+
+function buildPreviewText(language: string, storyTopic?: string, script?: string): string {
+  const topic = storyTopic?.trim() || "trái cây tươi";
+  const scriptDialogueLines = script ? extractDialogueLinesFromScript(script, 1) : [];
+  const scriptSnippet = normalizeSpacing(scriptDialogueLines.slice(0, 2).join(" "));
+
+  if (scriptSnippet) {
+    return enforceMinimumPreviewLength(scriptSnippet.slice(0, 280), language, topic);
+  }
+
+  if (language === "English") {
+    return enforceMinimumPreviewLength(
+      `Hello, this is a sample voice for your ${topic} video. Please pick the voice style that feels most natural for your audience.`,
+      language,
+      topic
+    );
+  }
+
+  if (language === "한국어") {
+    return enforceMinimumPreviewLength(
+      "안녕하세요. 이것은 음성 미리듣기 샘플입니다. 영상 분위기에 가장 잘 맞는 목소리를 선택해 주세요.",
+      language,
+      topic
+    );
+  }
+
+  if (language === "日本語") {
+    return enforceMinimumPreviewLength(
+      "こんにちは。こちらは音声プレビューのサンプルです。動画の雰囲気に合う声を選んでください。",
+      language,
+      topic
+    );
   }
 
   if (language === "Tiếng Việt" || language === "Vietnamese") {
-    return `Xin chào, đây là mẫu giọng đọc cho video ${topic}. Bạn hãy nghe thử và chọn giọng phù hợp nhất.`;
+    return enforceMinimumPreviewLength(
+      `Xin chào, đây là mẫu giọng đọc cho video ${topic}. Bạn hãy nghe thử và chọn giọng phù hợp nhất.`,
+      language,
+      topic
+    );
   }
 
-  return `Xin chào, đây là mẫu giọng đọc cho video ${topic}. Bạn hãy nghe thử và chọn giọng phù hợp nhất.`;
+  return enforceMinimumPreviewLength(
+    `Xin chào, đây là mẫu giọng đọc cho video ${topic}. Bạn hãy nghe thử và chọn giọng phù hợp nhất.`,
+    language,
+    topic
+  );
 }
 
 async function persistAudio(buffer: Buffer, fileName: string): Promise<string> {

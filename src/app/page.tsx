@@ -191,6 +191,9 @@ export default function HomePage() {
   const [isUploadingSampleImage, setIsUploadingSampleImage] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [generationResultModal, setGenerationResultModal] = useState<
+    { status: "completed" | "failed"; message: string } | null
+  >(null);
   const sampleImageUploadTokenRef = useRef(0);
 
   const updateForm = useCallback((partial: Partial<typeof DEFAULT_FORM>) => {
@@ -398,6 +401,7 @@ export default function HomePage() {
     setIsGeneratingVideo(true);
     setErrorMessage(null);
     setSuccessMessage(null);
+    setGenerationResultModal(null);
 
     try {
       const pid = await ensureProject();
@@ -551,15 +555,25 @@ export default function HomePage() {
         setAudioUrl(statusData.audioUrl);
 
         if (status === "failed") {
-          setErrorMessage(
+          const failedMessage =
             statusData.errorMessage ||
-              "Tạo video thất bại. Vui lòng kiểm tra quota API và thử lại."
-          );
+            "Tạo video thất bại. Vui lòng kiểm tra quota API và thử lại.";
+          setErrorMessage(failedMessage);
           setSuccessMessage(null);
+          setGenerationResultModal({
+            status: "failed",
+            message: failedMessage,
+          });
         }
 
         if (status === "completed") {
-          setSuccessMessage("Tạo video thành công. Bạn có thể xem trước hoặc tải video ngay.");
+          const completedMessage =
+            "Tạo video thành công. Bạn có thể xem trước hoặc tải video ngay.";
+          setSuccessMessage(completedMessage);
+          setGenerationResultModal({
+            status: "completed",
+            message: completedMessage,
+          });
         }
 
         if (status === "completed" || status === "failed") {
@@ -660,6 +674,7 @@ export default function HomePage() {
     });
     setErrorMessage(null);
     setSuccessMessage(null);
+    setGenerationResultModal(null);
   }, []);
 
   return (
@@ -806,6 +821,51 @@ export default function HomePage() {
                   >
                     Đóng
                   </button>
+                </div>
+              ) : null}
+
+              {generationResultModal ? (
+                <div className="fixed inset-0 z-[140] flex items-center justify-center bg-[#0f2a1d]/28 px-4 backdrop-blur-[1px]">
+                  <div className="w-full max-w-md rounded-2xl border border-[#b9e6ce] bg-[#f3fbf7] p-5 shadow-[0_20px_50px_rgba(27,79,55,0.26)] md:p-6">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[#3f7a5f]">
+                      Kết quả tạo video
+                    </p>
+                    <h3
+                      className={`mt-1 text-xl font-bold md:text-2xl ${
+                        generationResultModal.status === "completed"
+                          ? "text-[#0f8f4e]"
+                          : "text-[#b12b2b]"
+                      }`}
+                    >
+                      {generationResultModal.status === "completed"
+                        ? "Tạo video thành công"
+                        : "Tạo video thất bại"}
+                    </h3>
+                    <p className="mt-3 text-sm leading-relaxed text-[#365f4c] md:text-base">
+                      {generationResultModal.message}
+                    </p>
+
+                    <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+                      {generationResultModal.status === "completed" && videoUrl ? (
+                        <a
+                          href={videoUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-10 items-center justify-center rounded-xl border border-[#9fdab9] bg-white px-4 text-sm font-semibold text-[#1f734d] transition hover:border-[#73c99d]"
+                        >
+                          Mở video
+                        </a>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        onClick={() => setGenerationResultModal(null)}
+                        className="inline-flex h-10 items-center justify-center rounded-xl bg-[#0db461] px-4 text-sm font-semibold text-white transition hover:bg-[#0aa757]"
+                      >
+                        Đã hiểu
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ) : null}
           </div>

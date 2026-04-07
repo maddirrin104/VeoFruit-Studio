@@ -50,7 +50,8 @@ function normalizePromptText(prompt: string): string {
     return compact;
   }
 
-  return `${compact.slice(0, 997)}...`;
+  // Keep both head and tail so hard constraints and script context survive together.
+  return `${compact.slice(0, 610)} ... ${compact.slice(-370)}`;
 }
 
 export function mapAspectRatioToRunwayRatio(
