@@ -308,6 +308,11 @@ export function buildVideoPrompt(
   // Keep style directives first so they survive provider-side prompt trimming.
   const directionBlock = [
     "Create a professional fruit product video.",
+    "Cultural direction (must follow):",
+    "- Prioritize Vietnamese context, lifestyle, and consumer taste.",
+    "- Visual cues should feel local to Vietnam: market stalls, neighborhood fruit shops, tropical farm context, Vietnamese signage style (no readable brand names).",
+    "- Keep wardrobe, gestures, and pacing natural for Vietnamese audience; avoid overly Western styling.",
+    "- Skin tones, lighting, props, and food presentation should feel authentic to Vietnam.",
     ...productLockHints,
     `Visual style: ${visualStyle}.`,
     `Emotional tone: ${emotionStyle}.`,
@@ -326,6 +331,8 @@ export function buildVideoPrompt(
   // Narrative constraints are explicit so script/character choices are not ignored.
   const narrativeBlock = [
     "Narrative requirements (must follow):",
+    "- Target audience: Vietnamese viewers.",
+    "- Keep character behavior and body language culturally natural in Vietnam.",
     otherDetails?.storyTopic ? `- Main topic: ${otherDetails.storyTopic}.` : "",
     otherDetails?.characterType ? `- Character type: ${otherDetails.characterType}.` : "",
     cappedCharacterDescription ? `- Character persona: ${cappedCharacterDescription}.` : "",

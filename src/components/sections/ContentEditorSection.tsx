@@ -33,6 +33,7 @@ const CHARACTER_DESCRIPTION_MAX_LENGTH = 220;
 const characterTypeOptions = [
   "Nữ tư vấn viên cửa hàng trái cây",
   "Nam tư vấn viên cửa hàng trái cây",
+  "Chủ nông trại trái cây",
   "Chủ shop trái cây thân thiện",
   "Nhân viên siêu thị quầy trái cây",
   "Đầu bếp chia sẻ công thức trái cây",
