@@ -1,4 +1,10 @@
-export type VoiceType = "Nam" | "Nữ";
+import {
+  getVoiceEnvVarName,
+  getVoiceProviderCode,
+  type VoiceType,
+} from "@/lib/voice-options";
+
+export type { VoiceType };
 export type AudioOutputFormat = "mp3" | "wav";
 
 export interface VoiceSettingsInput {
@@ -28,26 +34,13 @@ export function isFptConfigured(): boolean {
 }
 
 function getFptVoiceByType(voiceType: VoiceType): string {
-  const femaleVoice = process.env.FPT_AI_VOICE_FEMALE?.trim();
-  const maleVoice = process.env.FPT_AI_VOICE_MALE?.trim();
-
-  if (voiceType === "Nữ") {
-    if (!femaleVoice) {
-      throw new Error(
-        "FPT female voice is not configured. Please set FPT_AI_VOICE_FEMALE in .env."
-      );
-    }
-
-    return femaleVoice;
+  const specificEnvName = getVoiceEnvVarName(voiceType);
+  const specificEnvValue = process.env[specificEnvName]?.trim();
+  if (specificEnvValue) {
+    return specificEnvValue;
   }
 
-  if (!maleVoice) {
-    throw new Error(
-      "FPT male voice is not configured. Please set FPT_AI_VOICE_MALE in .env."
-    );
-  }
-
-  return maleVoice;
+  return getVoiceProviderCode(voiceType);
 }
 
 function normalizeReadSpeedForFpt(readSpeed: number): string {

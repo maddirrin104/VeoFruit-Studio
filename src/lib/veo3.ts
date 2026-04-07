@@ -68,6 +68,43 @@ export interface Veo3VideoResponse {
   operationId: string;
 }
 
+type FruitAnchor = {
+  canonical: string;
+  aliases: string[];
+};
+
+const FRUIT_ANCHORS: FruitAnchor[] = [
+  { canonical: "dragon fruit", aliases: ["thanh long", "dragon fruit", "pitaya"] },
+  { canonical: "strawberry", aliases: ["dau tay", "dâu tây", "strawberry"] },
+  { canonical: "melon", aliases: ["dua luoi", "dưa lưới", "melon", "cantaloupe", "muskmelon"] },
+  { canonical: "mango", aliases: ["xoai", "xoài", "mango"] },
+  { canonical: "banana", aliases: ["chuoi", "chuối", "banana"] },
+  { canonical: "orange", aliases: ["cam", "orange"] },
+  { canonical: "apple", aliases: ["tao", "táo", "apple"] },
+];
+
+function normalizeForMatch(input: string): string {
+  return input
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function detectFruitAnchor(...inputs: Array<string | undefined>): string | undefined {
+  const merged = normalizeForMatch(inputs.filter(Boolean).join(" "));
+  if (!merged) {
+    return undefined;
+  }
+
+  for (const fruit of FRUIT_ANCHORS) {
+    if (fruit.aliases.some((alias) => merged.includes(normalizeForMatch(alias)))) {
+      return fruit.canonical;
+    }
+  }
+
+  return undefined;
+}
+
 interface GeneratedVideoFile {
   uri?: string;
   name?: string;
@@ -222,6 +259,42 @@ export function buildVideoPrompt(
       ].join("\n")
     : "";
 
+  const detectedFruitAnchor = detectFruitAnchor(
+    typeof otherDetails?.storyTopic === "string" ? otherDetails.storyTopic : undefined,
+    script,
+    typeof otherDetails?.referenceImageName === "string" ? otherDetails.referenceImageName : undefined
+  );
+
+  const mainProductTopic =
+    typeof otherDetails?.storyTopic === "string" && otherDetails.storyTopic.trim().length > 0
+      ? otherDetails.storyTopic.trim()
+      : detectedFruitAnchor || referenceProductAnchor;
+
+  const productLockHints: string[] = [
+    "Product lock (critical, must follow):",
+    `- Main product identity: ${mainProductTopic}.`,
+    detectedFruitAnchor ? `- Canonical fruit anchor: ${detectedFruitAnchor}.` : "",
+    "- Never replace the main product with a different fruit/product in any shot.",
+    "- Keep the same fruit type consistent from first shot to last shot.",
+    "- The hero fruit must stay clearly visible in every scene.",
+  ];
+
+  const normalizedTopic = mainProductTopic.toLowerCase();
+  if (
+    (normalizedTopic.includes("thanh long") || normalizedTopic.includes("dragon fruit")) ||
+    detectedFruitAnchor === "dragon fruit"
+  ) {
+    productLockHints.push(
+      "- If topic is thanh long (dragon fruit), do not generate apple/orange/banana/grape as the hero product."
+    );
+  }
+
+  if (detectedFruitAnchor && detectedFruitAnchor !== "apple") {
+    productLockHints.push(
+      "- Do not generate apple as the hero product unless apple is explicitly the requested topic."
+    );
+  }
+
   const cappedCharacterDescription =
     typeof otherDetails?.characterDescription === "string"
       ? otherDetails.characterDescription.trim().slice(0, 220)
@@ -235,6 +308,7 @@ export function buildVideoPrompt(
   // Keep style directives first so they survive provider-side prompt trimming.
   const directionBlock = [
     "Create a professional fruit product video.",
+    ...productLockHints,
     `Visual style: ${visualStyle}.`,
     `Emotional tone: ${emotionStyle}.`,
     `Motion level: ${intensityLevel}; ${cameraMovement}.`,

@@ -1,3 +1,5 @@
+import type { VoiceType } from "@/lib/voice-options";
+
 export interface OptionItem {
   label: string;
   subLabel?: string;
@@ -31,7 +33,7 @@ export interface ImageConfigInput {
 
 export interface AudioConfigInput {
   narrationMode: "script_read_along" | "separate_voiceover";
-  voiceGender: "Nam" | "Nữ";
+  voiceGender: VoiceType;
   language: string;
   readSpeed: number;
   emotionIntensity: number;

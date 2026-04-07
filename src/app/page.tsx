@@ -8,8 +8,15 @@ import { StudioHeader } from "@/components/sections/StudioHeader";
 import { VideoConfigSection } from "@/components/sections/VideoConfigSection";
 import { DraftSection } from "@/components/sections/DraftSection";
 import {
+  getDefaultVoiceByGender,
+  getVoiceGenderFromVoiceType,
+  getVoiceLabel,
+  type VoiceType,
+} from "@/lib/voice-options";
+import {
   createGeneration,
   createProject,
+  generateVoicePreview,
   generateScript,
   getGeneration,
   uploadSampleImage,
@@ -85,7 +92,7 @@ function normalizeWebImageUrl(url?: string): string | undefined {
 }
 
 function buildDefaultCharacterDescription(
-  voiceType: "Nam" | "Nữ",
+  voiceGender: "Nam" | "Nữ",
   characterType: string,
   sceneLocation: string
 ) {
@@ -117,11 +124,11 @@ function buildDefaultCharacterDescription(
     return `MC tại ${sceneLocation}, giọng nói rõ ràng, chuyên nghiệp, truyền tải thông tin mạch lạc và dễ theo dõi.`;
   }
 
-  if (characterType.includes("Nữ") || voiceType === "Nữ") {
+  if (characterType.includes("Nữ") || voiceGender === "Nữ") {
     return `Nữ tư vấn viên tại ${sceneLocation}, tác phong chuyên nghiệp, giao tiếp thân thiện, giới thiệu điểm nổi bật của từng loại trái cây.`;
   }
 
-  if (characterType.includes("Nam") || voiceType === "Nam") {
+  if (characterType.includes("Nam") || voiceGender === "Nam") {
     return `Nam tư vấn viên tại ${sceneLocation}, phong thái điềm tĩnh, tư vấn rõ ràng, nhấn mạnh độ tươi, hương vị và cách bảo quản.`;
   }
 
@@ -149,7 +156,7 @@ const DEFAULT_FORM = {
   transitionEnabled: true,
   subjectConsistent: true,
   narrationMode: "separate_voiceover" as "script_read_along" | "separate_voiceover",
-  voiceType: "Nam" as "Nam" | "Nữ",
+  voiceType: "banmai" as VoiceType,
   language: "Tiếng Việt",
   readSpeed: 50,
   emotionIntensity: 50,
@@ -164,10 +171,12 @@ export default function HomePage() {
   const [lastSavedLabel, setLastSavedLabel] = useState("Chưa lưu");
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
+  const [isPreviewingVoice, setIsPreviewingVoice] = useState(false);
   const [generationId, setGenerationId] = useState<string | null>(null);
   const [generationStatus, setGenerationStatus] = useState<GenerationState>("idle");
   const [videoUrl, setVideoUrl] = useState<string | undefined>(undefined);
   const [audioUrl, setAudioUrl] = useState<string | undefined>(undefined);
+  const [previewVoiceUrl, setPreviewVoiceUrl] = useState<string | undefined>(undefined);
   const [sampleImageUrl, setSampleImageUrl] = useState<string | undefined>(undefined);
   const [sampleImageName, setSampleImageName] = useState<string | undefined>(undefined);
   const [uploadedSampleImageUrl, setUploadedSampleImageUrl] = useState<string | undefined>(
@@ -273,7 +282,7 @@ export default function HomePage() {
         characterDescription: form.characterDescription,
         characterType: form.characterType,
         sceneLocation: form.sceneLocation,
-        voiceType: form.voiceType,
+        voiceType: getVoiceGenderFromVoiceType(form.voiceType),
         videoGenre: form.videoGenre,
         contentTone: form.contentTone,
         numberOfScenes: form.numberOfScenes,
@@ -315,15 +324,17 @@ export default function HomePage() {
     const randomGenre = pickRandom(VIDEO_GENRES);
     const randomScenes = pickRandom([3, 4, 5, 6] as const);
 
-    const nextVoiceType =
+    const nextVoiceGender =
       randomCharacterType.includes("Nữ")
         ? "Nữ"
         : randomCharacterType.includes("Nam")
         ? "Nam"
-        : form.voiceType;
+        : getVoiceGenderFromVoiceType(form.voiceType);
+
+    const nextVoiceType = getDefaultVoiceByGender(nextVoiceGender);
 
     const randomCharacterDescription = buildDefaultCharacterDescription(
-      nextVoiceType,
+      nextVoiceGender,
       randomCharacterType,
       randomSceneLocation
     );
@@ -354,7 +365,7 @@ export default function HomePage() {
         characterDescription: randomCharacterDescription,
         characterType: randomCharacterType,
         sceneLocation: randomSceneLocation,
-        voiceType: nextVoiceType,
+        voiceType: nextVoiceGender,
         videoGenre: randomGenre,
         contentTone: randomContentTone,
         numberOfScenes: randomScenes,
@@ -477,6 +488,45 @@ export default function HomePage() {
     uploadedSampleImageUrl,
   ]);
 
+  const handlePreviewVoice = useCallback(async (voiceToPreview?: VoiceType) => {
+    setIsPreviewingVoice(true);
+    setErrorMessage(null);
+
+    try {
+      const effectiveVoiceType = voiceToPreview ?? form.voiceType;
+      if (voiceToPreview && voiceToPreview !== form.voiceType) {
+        updateForm({ voiceType: voiceToPreview });
+      }
+
+      const result = await generateVoicePreview({
+        script: form.script,
+        storyTopic: form.storyTopic,
+        audioConfig: {
+          voiceGender: effectiveVoiceType,
+          language: form.language,
+          readSpeed: form.readSpeed,
+          emotionIntensity: form.emotionIntensity,
+          outputFormat: form.outputFormat,
+        },
+      });
+
+      setPreviewVoiceUrl(result.audioUrl);
+    } catch (error) {
+      setErrorMessage((error as Error).message);
+    } finally {
+      setIsPreviewingVoice(false);
+    }
+  }, [
+    form.emotionIntensity,
+    form.language,
+    form.outputFormat,
+    form.readSpeed,
+    form.script,
+    form.storyTopic,
+    form.voiceType,
+    updateForm,
+  ]);
+
   useEffect(() => {
     if (!generationId) {
       return;
@@ -590,6 +640,7 @@ export default function HomePage() {
     setGenerationStatus("idle");
     setVideoUrl(undefined);
     setAudioUrl(undefined);
+    setPreviewVoiceUrl(undefined);
     sampleImageUploadTokenRef.current += 1;
     setIsUploadingSampleImage(false);
     setUploadedSampleImageUrl(undefined);
@@ -632,6 +683,7 @@ export default function HomePage() {
                 onStoryTopicChange={(value) => updateForm({ storyTopic: value })}
                 onCharacterDescriptionChange={(value) => updateForm({ characterDescription: value })}
                 onCharacterTypeChange={(value) => {
+                  const voiceGender = getVoiceGenderFromVoiceType(form.voiceType);
                   updateForm({
                     characterType: value,
                     characterDescription: buildDefaultCharacterDescription(
@@ -639,13 +691,14 @@ export default function HomePage() {
                         ? "Nữ"
                         : value.includes("Nam")
                         ? "Nam"
-                        : form.voiceType,
+                        : voiceGender,
                       value,
                       form.sceneLocation
                     ),
                   });
                 }}
                 onSceneLocationChange={(value) => {
+                  const voiceGender = getVoiceGenderFromVoiceType(form.voiceType);
                   updateForm({
                     sceneLocation: value,
                     characterDescription: buildDefaultCharacterDescription(
@@ -653,7 +706,7 @@ export default function HomePage() {
                         ? "Nữ"
                         : form.characterType.includes("Nam")
                         ? "Nam"
-                        : form.voiceType,
+                        : voiceGender,
                       form.characterType,
                       value
                     ),
@@ -692,6 +745,8 @@ export default function HomePage() {
                 emotionIntensity={form.emotionIntensity}
                 outputFormat={form.outputFormat}
                 bgMusicEnabled={form.bgMusicEnabled}
+                isPreviewingVoice={isPreviewingVoice}
+                previewVoiceUrl={previewVoiceUrl}
                 isGeneratingVideo={isGeneratingVideo}
                 onEmotionStyleChange={(value) => updateForm({ emotionStyle: value })}
                 onVisualStyleChange={(value) => updateForm({ visualStyle: value })}
@@ -706,7 +761,7 @@ export default function HomePage() {
                       ? {}
                       : {
                           characterDescription: buildDefaultCharacterDescription(
-                            value,
+                            getVoiceGenderFromVoiceType(value),
                             form.characterType,
                             form.sceneLocation
                           ),
@@ -718,6 +773,7 @@ export default function HomePage() {
                 onEmotionIntensityChange={(value) => updateForm({ emotionIntensity: value })}
                 onOutputFormatChange={(value) => updateForm({ outputFormat: value })}
                 onBgMusicEnabledChange={(value) => updateForm({ bgMusicEnabled: value })}
+                onPreviewVoice={handlePreviewVoice}
                 onReset={handleReset}
                 onGenerateVideo={handleGenerateVideo}
               />
@@ -755,7 +811,7 @@ export default function HomePage() {
               resolution={form.resolution}
               aspectRatio={form.aspectRatio}
               durationSeconds={form.durationSeconds}
-              voiceType={form.voiceType}
+              voiceType={getVoiceLabel(form.voiceType)}
               visualStyle={form.visualStyle}
               sampleImageUrl={sampleImageUrl}
               sampleImageName={sampleImageName}

@@ -9,36 +9,89 @@ export interface NarrationContextInput {
   readSpeed: number;
 }
 
-export function extractDialogueLinesFromScript(script: string): string[] {
-  const normalizedScript = script.replace(/\r\n/g, "\n");
-  const sceneBlocks = normalizedScript
-    .split(/(^|\n)\s*SCENE\s+\d+\s*/gi)
-    .map((block) => block.trim())
+type SceneBlock = {
+  sceneNo: number | null;
+  content: string;
+};
+
+function splitSceneBlocks(script: string): SceneBlock[] {
+  const normalized = script.replace(/\r\n/g, "\n");
+  const parts = normalized.split(/(?:^|\n)\s*SCENE\s+(\d+)\s*/gi);
+
+  if (parts.length < 3) {
+    return [{ sceneNo: null, content: normalized }];
+  }
+
+  const blocks: SceneBlock[] = [];
+  for (let index = 1; index < parts.length; index += 2) {
+    const sceneNo = Number(parts[index]);
+    const content = (parts[index + 1] || "").trim();
+    if (content) {
+      blocks.push({ sceneNo: Number.isFinite(sceneNo) ? sceneNo : null, content });
+    }
+  }
+
+  return blocks.length > 0 ? blocks : [{ sceneNo: null, content: normalized }];
+}
+
+function extractDialogueFromBlock(block: string): string[] {
+  const lines = block
+    .split("\n")
+    .map((line) => line.trim())
     .filter(Boolean);
 
-  const orderedDialogueLines: string[] = [];
+  const dialogueLines: string[] = [];
+  let inDialogue = false;
 
-  for (const block of sceneBlocks.length > 0 ? sceneBlocks : [normalizedScript]) {
-    const blockDialogueLines = block
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => /^(LỜI THOẠI|LOI THOAI)\s*:/i.test(line))
-      .map((line) => line.replace(/^(LỜI THOẠI|LOI THOAI)\s*:\s*/i, ""))
-      .map((line) => line.replace(/^"|"$/g, ""))
-      .filter(Boolean);
+  for (const line of lines) {
+    if (/^(LỜI THOẠI|LOI THOAI)\s*:/i.test(line)) {
+      inDialogue = true;
+      const sameLineDialogue = line
+        .replace(/^(LỜI THOẠI|LOI THOAI)\s*:\s*/i, "")
+        .replace(/^"|"$/g, "")
+        .trim();
 
-    orderedDialogueLines.push(...blockDialogueLines);
+      if (sameLineDialogue) {
+        dialogueLines.push(sameLineDialogue);
+      }
+      continue;
+    }
+
+    if (/^(CẢNH QUAY|CANH QUAY)\s*:/i.test(line) || /^SCENE\s+\d+/i.test(line)) {
+      inDialogue = false;
+      continue;
+    }
+
+    if (!inDialogue) {
+      continue;
+    }
+
+    const cleaned = line.replace(/^[-*•]\s*/, "").replace(/^"|"$/g, "").trim();
+    if (cleaned) {
+      dialogueLines.push(cleaned);
+    }
   }
 
-  if (orderedDialogueLines.length > 0) {
-    return orderedDialogueLines;
+  return dialogueLines;
+}
+
+export function extractDialogueLinesFromScript(script: string, sceneNumber?: number): string[] {
+  const blocks = splitSceneBlocks(script);
+  const selectedBlocks =
+    sceneNumber !== undefined
+      ? blocks.filter((block) => block.sceneNo === sceneNumber)
+      : blocks;
+
+  const dialogueLines = selectedBlocks.flatMap((block) => extractDialogueFromBlock(block.content));
+
+  if (dialogueLines.length > 0) {
+    return dialogueLines;
   }
 
-  const inlineDialogueMatches = [...normalizedScript.matchAll(/(?:^|\n)\s*(?:LỜI THOẠI|LOI THOAI)\s*:\s*([^\n]+)/gi)]
+  const normalizedScript = script.replace(/\r\n/g, "\n");
+  return [...normalizedScript.matchAll(/(?:^|\n)\s*(?:LỜI THOẠI|LOI THOAI)\s*:\s*([^\n]+)/gi)]
     .map((match) => match[1]?.trim().replace(/^"|"$/g, "") || "")
     .filter(Boolean);
-
-  return inlineDialogueMatches;
 }
 
 function estimateWordsPerMinute(language: string): number {
@@ -74,7 +127,13 @@ function limitNarrationLength(text: string, targetWords: number): string {
 
 export function buildNarrationText(context: NarrationContextInput): string {
   const script = context.script?.trim() || "";
-  const scriptLines = script ? extractDialogueLinesFromScript(script) : [];
+  const sceneOneScriptLines = script ? extractDialogueLinesFromScript(script, 1) : [];
+  const scriptLines =
+    sceneOneScriptLines.length > 0
+      ? sceneOneScriptLines
+      : script
+      ? extractDialogueLinesFromScript(script)
+      : [];
   const raw = scriptLines.join(" ").trim();
 
   // When script dialogue exists, keep narration text strictly aligned with script lines
@@ -84,7 +143,12 @@ export function buildNarrationText(context: NarrationContextInput): string {
     `Hôm nay chúng tôi giới thiệu ${context.storyTopic || "sản phẩm trái cây tươi"} với phong cách tự nhiên và gần gũi.`
   );
 
-  const narration = combined || fallback;
+  if (combined) {
+    // If script dialogue exists, keep full Scene 1 narration without word trimming.
+    return combined;
+  }
+
+  const narration = fallback;
 
   const baseWpm = estimateWordsPerMinute(context.language);
   const speedMultiplier = 0.75 + (Math.min(100, Math.max(0, context.readSpeed)) / 100) * 0.5;

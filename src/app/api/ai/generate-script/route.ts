@@ -25,6 +25,10 @@ interface GenerateScriptRequest {
   referenceImageSource?: "upload" | "url";
 }
 
+const TARGET_SCRIPT_CHARS = 1500;
+const MIN_SCRIPT_CHARS = 1200;
+const MAX_SCRIPT_CHARS = 1700;
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as GenerateScriptRequest;
@@ -106,7 +110,7 @@ export async function POST(request: NextRequest) {
     }
 
     const requestedScenes = Math.max(2, Math.min(6, numberOfScenes));
-    if (countScenes(script) < requestedScenes) {
+    if (countScenes(script) < requestedScenes || hasLikelyTruncatedEnding(script)) {
       const strictPrompt = [
         `${instructionBlock}`,
         "",
@@ -116,6 +120,7 @@ export async function POST(request: NextRequest) {
         `- Viết đúng ${requestedScenes} cảnh, đánh số chính xác từ SCENE 1 đến SCENE ${requestedScenes}.`,
         "- Mỗi cảnh đều phải có đủ 2 mục: Cảnh quay và Lời thoại.",
         "- Không được dừng giữa câu, không được trả về bản nháp ngắn.",
+        `- Tổng độ dài toàn kịch bản khoảng ${TARGET_SCRIPT_CHARS} ký tự (dao động ${MIN_SCRIPT_CHARS}-${MAX_SCRIPT_CHARS} ký tự).`,
         "- Chỉ trả về kịch bản hoàn chỉnh.",
         "",
         "Bản nháp chưa đạt (hãy viết lại đầy đủ):",
@@ -146,6 +151,9 @@ export async function POST(request: NextRequest) {
         numberOfScenes: requestedScenes,
       });
     }
+
+    script = ensureCompleteEnding(script);
+    script = fitScriptLength(script, TARGET_SCRIPT_CHARS, MIN_SCRIPT_CHARS, MAX_SCRIPT_CHARS);
 
     return NextResponse.json({
       data: {
@@ -271,7 +279,8 @@ function buildGeminiScriptPrompt(input: {
     "- Nếu có ảnh tham chiếu, kịch bản phải bám theo ảnh và không đi lệch quá xa nội dung ảnh.",
     "- Không viết phần giải thích, chỉ trả về kịch bản hoàn chỉnh.",
     "- Đảm bảo câu chữ phù hợp để dùng ngay cho tạo video.",
-    "- Nếu có thể, tạo ra ít nhất 120-180 từ cho 3 cảnh hoặc 180-260 từ cho 4 cảnh.",
+    `- Tổng độ dài toàn kịch bản khoảng ${TARGET_SCRIPT_CHARS} ký tự (dao động ${MIN_SCRIPT_CHARS}-${MAX_SCRIPT_CHARS} ký tự).`,
+    "- Không được cắt dở câu ở cuối; câu cuối phải hoàn chỉnh.",
   ]
     .filter(Boolean)
     .join("\n");
@@ -323,6 +332,64 @@ function buildDefaultCharacterDescription(
 
 function countScenes(script: string): number {
   return (script.match(/(^|\n)\s*SCENE\s+\d+/gi) || []).length;
+}
+
+function hasLikelyTruncatedEnding(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return true;
+  }
+
+  return !/[.!?…"'”)]$/.test(trimmed);
+}
+
+function ensureCompleteEnding(script: string): string {
+  const normalized = script.replace(/\r\n/g, "\n").trim();
+  if (!hasLikelyTruncatedEnding(normalized)) {
+    return normalized;
+  }
+
+  const lastSentenceEnd = Math.max(
+    normalized.lastIndexOf("."),
+    normalized.lastIndexOf("!"),
+    normalized.lastIndexOf("?")
+  );
+
+  if (lastSentenceEnd > Math.floor(normalized.length * 0.55)) {
+    return normalized.slice(0, lastSentenceEnd + 1).trim();
+  }
+
+  return `${normalized} Hãy ghé cửa hàng để chọn ngay phần trái cây tươi ngon phù hợp cho gia đình bạn.`;
+}
+
+function fitScriptLength(
+  script: string,
+  targetChars: number,
+  minChars: number,
+  maxChars: number
+): string {
+  const normalized = script.replace(/\r\n/g, "\n").trim();
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+
+  const inspectionWindow = normalized.slice(0, maxChars + 120);
+  const sentenceEnd = Math.max(
+    inspectionWindow.lastIndexOf("."),
+    inspectionWindow.lastIndexOf("!"),
+    inspectionWindow.lastIndexOf("?")
+  );
+
+  if (sentenceEnd >= minChars) {
+    return inspectionWindow.slice(0, sentenceEnd + 1).trim();
+  }
+
+  const softCap = Math.max(minChars, Math.min(maxChars, targetChars + 80));
+  const softSlice = normalized.slice(0, softCap);
+  const wordBreak = softSlice.lastIndexOf(" ");
+
+  const safe = wordBreak > 0 ? softSlice.slice(0, wordBreak).trim() : softSlice.trim();
+  return /[.!?…"'”)]$/.test(safe) ? safe : `${safe}.`;
 }
 
 function buildDeterministicSceneFallback(input: {

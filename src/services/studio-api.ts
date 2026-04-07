@@ -152,6 +152,26 @@ export async function generateAudio(payload: {
   });
 }
 
+export async function generateVoicePreview(payload: {
+  script?: string;
+  storyTopic?: string;
+  audioConfig: Pick<
+    AudioConfigInput,
+    "voiceGender" | "language" | "readSpeed" | "emotionIntensity" | "outputFormat"
+  >;
+}): Promise<{
+  audioUrl: string;
+  sampleText: string;
+}> {
+  return http<{
+    audioUrl: string;
+    sampleText: string;
+  }>("/api/ai/preview-voice", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function getGeneration(generationId: string): Promise<GenerationRecord> {
   return http<GenerationRecord>(`/api/generations/${generationId}`);
 }

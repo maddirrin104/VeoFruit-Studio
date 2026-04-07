@@ -65,6 +65,28 @@ function stripCodeFences(text: string): string {
     .trim();
 }
 
+function tryParseTranslatedContext(rawText: string): Partial<TranslatedPromptContext> | null {
+  const cleaned = stripCodeFences(rawText);
+
+  try {
+    return JSON.parse(cleaned) as Partial<TranslatedPromptContext>;
+  } catch {
+    // Gemini can occasionally prepend/append non-JSON text; try the first JSON object slice.
+    const firstBrace = cleaned.indexOf("{");
+    const lastBrace = cleaned.lastIndexOf("}");
+    if (firstBrace < 0 || lastBrace <= firstBrace) {
+      return null;
+    }
+
+    const candidate = cleaned.slice(firstBrace, lastBrace + 1);
+    try {
+      return JSON.parse(candidate) as Partial<TranslatedPromptContext>;
+    } catch {
+      return null;
+    }
+  }
+}
+
 async function translatePromptContextToEnglish(
   context: PromptContext
 ): Promise<TranslatedPromptContext> {
@@ -119,7 +141,11 @@ async function translatePromptContextToEnglish(
       return context;
     }
 
-    const parsed = JSON.parse(stripCodeFences(rawText)) as Partial<TranslatedPromptContext>;
+    const parsed = tryParseTranslatedContext(rawText);
+    if (!parsed) {
+      console.warn("[Generation] Prompt translation returned non-JSON output; fallback to Vietnamese prompt.");
+      return context;
+    }
 
     return {
       storyTopic: parsed.storyTopic?.trim() || context.storyTopic,

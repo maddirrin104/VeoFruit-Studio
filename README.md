@@ -23,8 +23,16 @@ DATABASE_URL="postgresql://postgres:your_password@localhost:5432/veofruit_studio
 RUNWAYML_API_SECRET="your_runway_api_secret"
 FPT_AI_API_KEY="your_fpt_ai_api_key"
 FPT_AI_TTS_URL="https://api.fpt.ai/hmi/tts/v5"
-FPT_AI_VOICE_FEMALE="banmai"
-FPT_AI_VOICE_MALE="" # optional
+# optional: override code provider cho tung giong
+# FPT_AI_VOICE_BANMAI="banmai"
+# FPT_AI_VOICE_LEMINH="leminh"
+# FPT_AI_VOICE_THUMINH="thuminh"
+# FPT_AI_VOICE_MINHQUANG="minhquang"
+# FPT_AI_VOICE_MYAN="myan"
+# FPT_AI_VOICE_LINHSAN="linhsan"
+# FPT_AI_VOICE_GIAHUY="giahuy"
+# FPT_AI_VOICE_LANNHI="lannhi"
+# FPT_AI_VOICE_NGOCLAM="ngoclam"
 ```
 
 Ban hay doi:
@@ -35,8 +43,8 @@ Ban hay doi:
 - `veofruit_studio`: ten database
 - `your_runway_api_secret`: API Secret tu RunwayML
 - `your_fpt_ai_api_key`: API key tu FPT AI
-- `FPT_AI_VOICE_FEMALE`: giọng nũ (mac dinh `banmai`)
-- `FPT_AI_VOICE_MALE`: tuy chon, can khi chon giọng Nam tren UI
+- Danh sach giong UI ho tro san: Ban Mai, Le Minh, Thu Minh, Minh Quang, My An, Linh San, Gia Huy, Lan Nhi, Ngoc Lam.
+- Neu nha cung cap doi ma voice, ban co the set bien `FPT_AI_VOICE_<TEN_GIONG>` tuong ung (vi du `FPT_AI_VOICE_BANMAI`).
 
 ## 4. Tao database va ket noi Prisma
 
