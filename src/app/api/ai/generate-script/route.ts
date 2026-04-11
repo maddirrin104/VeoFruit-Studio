@@ -28,6 +28,21 @@ interface GenerateScriptRequest {
 const TARGET_SCRIPT_CHARS = 1500;
 const MIN_SCRIPT_CHARS = 1200;
 const MAX_SCRIPT_CHARS = 1700;
+const GEMINI_MAX_RETRIES = 3;
+
+type GeminiGenerateContentArgs = {
+  model: string;
+  contents: Array<{ role?: string; parts: unknown[] }> | string;
+  config?: {
+    temperature?: number;
+    topP?: number;
+    maxOutputTokens?: number;
+  };
+};
+
+type GeminiGenerateContentModel = {
+  generateContent: (args: GeminiGenerateContentArgs) => Promise<{ text?: string }>;
+};
 
 export async function POST(request: NextRequest) {
   try {
@@ -78,38 +93,47 @@ export async function POST(request: NextRequest) {
       "Chỉ trả về kịch bản, không giải thích.",
     ].join(" ");
 
-    const model = genAI.models as unknown as {
-      generateContent: (args: {
-        model: string;
-        contents: Array<{ role?: string; parts: unknown[] }> | string;
-        config?: {
-          temperature?: number;
-          topP?: number;
-          maxOutputTokens?: number;
-        };
-      }) => Promise<{ text?: string }>;
-    };
+    const model = genAI.models as unknown as GeminiGenerateContentModel;
 
     const contents = imagePart
       ? [{ role: "user", parts: [createPartFromText(`${instructionBlock}\n\n${prompt}`), imagePart] }]
       : `${instructionBlock}\n\n${prompt}`;
 
-    const result = await model.generateContent({
-      model: "gemini-2.5-flash",
-      contents,
-      config: {
-        temperature: 0.55,
-        topP: 0.95,
-        maxOutputTokens: 2048,
-      },
-    });
+    const requestedScenes = Math.max(2, Math.min(6, numberOfScenes));
+    let script = "";
+    let warningMessage: string | undefined;
 
-    let script = result.text?.trim();
-    if (!script) {
-      throw new Error("Gemini returned an empty script response");
+    try {
+      const result = await generateContentWithRetry(model, {
+        model: "gemini-2.5-flash",
+        contents,
+        config: {
+          temperature: 0.55,
+          topP: 0.95,
+          maxOutputTokens: 2048,
+        },
+      });
+
+      script = result.text?.trim() || "";
+      if (!script) {
+        throw new Error("Gemini returned an empty script response");
+      }
+    } catch (error) {
+      if (!isTransientGeminiError(error)) {
+        throw error;
+      }
+
+      warningMessage =
+        "Gemini đang quá tải tạm thời, hệ thống đã dùng kịch bản dự phòng để bạn vẫn có thể tiếp tục tạo video.";
+
+      script = buildDeterministicSceneFallback({
+        topic,
+        sceneLocation,
+        characterType,
+        numberOfScenes: requestedScenes,
+      });
     }
 
-    const requestedScenes = Math.max(2, Math.min(6, numberOfScenes));
     if (countScenes(script) < requestedScenes || hasLikelyTruncatedEnding(script)) {
       const strictPrompt = [
         `${instructionBlock}`,
@@ -127,19 +151,30 @@ export async function POST(request: NextRequest) {
         script,
       ].join("\n");
 
-      const retryResult = await model.generateContent({
-        model: "gemini-2.5-flash",
-        contents: strictPrompt,
-        config: {
-          temperature: 0.45,
-          topP: 0.9,
-          maxOutputTokens: 2048,
-        },
-      });
+      try {
+        const retryResult = await generateContentWithRetry(model, {
+          model: "gemini-2.5-flash",
+          contents: strictPrompt,
+          config: {
+            temperature: 0.45,
+            topP: 0.9,
+            maxOutputTokens: 2048,
+          },
+        });
 
-      const retriedScript = retryResult.text?.trim();
-      if (retriedScript) {
-        script = retriedScript;
+        const retriedScript = retryResult.text?.trim();
+        if (retriedScript) {
+          script = retriedScript;
+        }
+      } catch (retryError) {
+        if (!isTransientGeminiError(retryError)) {
+          throw retryError;
+        }
+
+        if (!warningMessage) {
+          warningMessage =
+            "Gemini đang quá tải tạm thời, hệ thống giữ bản kịch bản hiện tại để tránh gián đoạn.";
+        }
       }
     }
 
@@ -160,15 +195,85 @@ export async function POST(request: NextRequest) {
         script,
         estimatedDuration: `${Math.min(numberOfScenes * 6, 72)} seconds`,
         sceneCount: numberOfScenes,
+        warning: warningMessage,
       },
     });
   } catch (error) {
     console.error("POST /api/ai/generate-script error:", error);
+
+    if (isTransientGeminiError(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "Gemini đang quá tải tạm thời (503). Vui lòng thử lại sau 15-60 giây hoặc bấm Random để dùng kịch bản dự phòng.",
+        },
+        { status: 503 }
+      );
+    }
+
     return NextResponse.json(
       { error: "Failed to generate script" },
       { status: 500 }
     );
   }
+}
+
+function extractGeminiStatusCode(error: unknown): number | undefined {
+  const directStatus = (error as { status?: unknown })?.status;
+  if (typeof directStatus === "number") {
+    return directStatus;
+  }
+
+  const message = (error as Error)?.message || "";
+  const matched = message.match(/"status"\s*:\s*(\d{3})/);
+  if (!matched) {
+    return undefined;
+  }
+
+  const parsed = Number(matched[1]);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function isTransientGeminiError(error: unknown): boolean {
+  const status = extractGeminiStatusCode(error);
+  if (status === 429 || status === 503) {
+    return true;
+  }
+
+  const message = ((error as Error)?.message || "").toLowerCase();
+  return (
+    message.includes("high demand") ||
+    message.includes("unavailable") ||
+    message.includes("rate limit") ||
+    message.includes("resource exhausted")
+  );
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function generateContentWithRetry(
+  model: GeminiGenerateContentModel,
+  args: GeminiGenerateContentArgs
+): Promise<{ text?: string }> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= GEMINI_MAX_RETRIES; attempt += 1) {
+    try {
+      return await model.generateContent(args);
+    } catch (error) {
+      lastError = error;
+      if (!isTransientGeminiError(error) || attempt >= GEMINI_MAX_RETRIES) {
+        throw error;
+      }
+
+      const delayMs = 900 * 2 ** (attempt - 1);
+      await sleep(delayMs);
+    }
+  }
+
+  throw lastError;
 }
 
 async function loadReferenceImagePart(request: NextRequest, referenceImageUrl: string) {

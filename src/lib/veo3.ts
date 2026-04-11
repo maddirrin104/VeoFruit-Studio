@@ -262,7 +262,34 @@ export function buildVideoPrompt(
 
   const transitionGuidance = otherDetails?.transitionEnabled
     ? "smooth transitions between shots"
-    : "hard cuts only, no transition effects";
+    : "single continuous shot, no cuts, no transition effects";
+
+  const singleShotLockGuidance =
+    otherDetails?.hasReferenceImage && !otherDetails?.transitionEnabled
+      ? [
+          "Single-shot lock (must follow when transitions are disabled):",
+          "- Use one continuous shot only from start to end (no scene change, no cutaway, no location switch).",
+          "- Keep the anchored fruit visible the whole time as the visual center.",
+          "- Keep the presenter visible in the frame the whole time as well, even during close-up shots (hand, shoulder, side profile, or full body near the fruit).",
+          "- Do not create a fruit-only opening; the presenter must already be present from the first frame.",
+          "- Place the presenter standing beside the fruit, speaking naturally to camera while pointing/gesturing to that same fruit.",
+          "- Do not switch to orchard, farm rows, market B-roll, or unrelated scenery.",
+          "- Final 20-30% duration: perform a slow push-in/zoom-in to a close-up of the same anchored fruit.",
+          "- Do not replace the fruit during the zoom-in; keep identical fruit identity and texture.",
+        ].join("\n")
+      : "";
+
+  const presenterFruitSequenceGuidance =
+    otherDetails?.hasReferenceImage
+      ? [
+          "Required shot choreography (must follow in order):",
+          "- Beat 1 (opening 20-30%): start with a close-up of the anchored fruit from the uploaded image, but keep the presenter partially visible in frame (hand, shoulder, or side profile) so the character never disappears.",
+          "- Beat 2 (middle 40-60%): smoothly widen/zoom-out to reveal a presenter standing beside the same fruit, pointing to it and introducing it while keeping fruit clearly visible.",
+          "- Beat 3 (ending 20-30%): smoothly zoom-in back to the same anchored fruit while the presenter remains visible in the frame or just behind it.",
+          "- Never switch to a different fruit between these beats.",
+          "- Never replace the middle beat with unrelated scenery or orchard montage.",
+        ].join("\n")
+      : "";
 
   const subjectConsistencyGuidance = otherDetails?.subjectConsistent
     ? "keep the same main subject identity and appearance consistent across all shots"
@@ -288,15 +315,18 @@ export function buildVideoPrompt(
         "Reference image rules (must follow):",
         `- Reference image source: ${referenceImageSourceLabel}.`,
         `- Product anchor: ${referenceProductAnchor}.`,
-        "- Use the reference image only to match PRODUCT identity (fruit/product type, color, texture, shape).",
+        "- Use the reference image only to match PRODUCT identity (fruit/product type, color, texture, shape), not to copy its whole composition.",
         "- The same anchored product must stay present from beginning to end, not only in the first second.",
-        "- Ensure the anchored product appears clearly in every shot (hero visibility in each scene).",
+        "- Ensure the anchored product appears clearly in every shot as the HERO OBJECT, occupying the main visual focus in the frame.",
         "- Keep product details consistent across all scenes: color tone, texture, size ratio, and recognizable shape.",
         "- The PRODUCT can look similar to the reference image; all non-product elements must be generated from script context.",
         "- Do not copy background, camera angle, scene layout, logo, packaging text, watermark, or unrelated objects from the image.",
-        "- Keep the presenter/character and actions aligned with the script in every scene.",
+        "- Keep the presenter/character aligned with the script, but make the character secondary to the fruit in framing.",
+        "- Prefer compositions where the character stands beside, behind, or slightly next to the fruit rather than blocking it.",
+        "- The presenter must remain visible in every shot; never generate a shot without the character present.",
+        "- The fruit must remain the clearest object in the scene; the character supports the narration and never replaces the fruit as the subject.",
         "- Follow script progression shot-by-shot; avoid turning the video into a static slideshow of the reference image.",
-        "- Never replace the scripted story with pure product closeups only.",
+        "- Never replace the scripted story with pure product closeups only, but also never drift into orchard/farm scenes without the hero fruit on screen.",
       ].join("\n")
     : "";
 
@@ -317,7 +347,9 @@ export function buildVideoPrompt(
     detectedFruitAnchor ? `- Canonical fruit anchor: ${detectedFruitAnchor}.` : "",
     "- Never replace the main product with a different fruit/product in any shot.",
     "- Keep the same fruit type consistent from first shot to last shot.",
-    "- The hero fruit must stay clearly visible in every scene.",
+    "- The hero fruit must stay clearly visible in every scene and should be the main subject of the shot.",
+    "- Character presence is secondary: the presenter should stand beside the fruit, not dominate the frame.",
+    "- Avoid switching to unrelated fruit baskets, orchard rows, or generic farm scenery if the uploaded image already defines the product.",
   ];
 
   const normalizedTopic = mainProductTopic.toLowerCase();
@@ -370,6 +402,8 @@ export function buildVideoPrompt(
     cappedCharacterDescription ? `Character direction: ${cappedCharacterDescription}.` : "",
     otherDetails?.contentTone ? `Content tone: ${otherDetails.contentTone}.` : "",
     referenceImageGuidance,
+    presenterFruitSequenceGuidance,
+    singleShotLockGuidance,
   ]
     .filter(Boolean)
     .join("\n");
@@ -392,6 +426,27 @@ export function buildVideoPrompt(
     "- Keep scene order, narrative intent, and dialogue beats aligned to the script.",
     otherDetails?.hasReferenceImage
       ? "- Maintain continuous on-screen presence of the anchored product in all scenes while character actions progress the story."
+      : "",
+    otherDetails?.hasReferenceImage
+      ? "- The presenter/character must remain visible in every shot and never disappear from the frame."
+      : "",
+    otherDetails?.hasReferenceImage
+      ? "- Main character is the narrative lead for the message, but the fruit remains the visual hero in the frame."
+      : "",
+    otherDetails?.hasReferenceImage
+      ? "- Fruit visuals support the story: use product beauty shots selectively and avoid long fruit-only montage or scenery-only shots."
+      : "",
+    otherDetails?.hasReferenceImage
+      ? "- In each scene, show both the character and anchored fruit together at least once to preserve script intent and product clarity."
+      : "",
+    otherDetails?.hasReferenceImage && !otherDetails?.transitionEnabled
+      ? "- Do not let reference image composition override scripted character blocking, gestures, and scene progression."
+      : "",
+    otherDetails?.hasReferenceImage
+      ? "- Since transitions are disabled, keep one static setup with subtle camera motion only, then end with a zoom-in on the same anchored fruit while the presenter stays visible."
+      : "",
+    otherDetails?.hasReferenceImage
+      ? "- Avoid cutting away to a wide orchard/farm establishing shot unless the uploaded image itself is clearly a farm scene; prefer simple product-table, shop, or presenter-side compositions."
       : "",
     "- If there is a conflict, prioritize script narrative for scene composition and action, while preserving product look similarity from reference image only.",
     narrationGuide ? "- Keep character mouth movement synchronized with the exact spoken narration lines below." : "",
