@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { getRuntimeSettings } from "@/lib/runtime-settings";
+import { buildFilesApiPath, getPublicPath } from "@/lib/runtime-path";
 
-const UPLOAD_DIR = path.join(process.cwd(), "public", "uploads");
+const UPLOAD_DIR = getPublicPath("uploads");
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 const MIME_TO_EXT: Record<string, string> = {
@@ -13,8 +15,9 @@ const MIME_TO_EXT: Record<string, string> = {
   "image/gif": "gif",
 };
 
-function getPublicOrigin(request: Request): string {
-  const configuredPublicBase = process.env.PUBLIC_APP_URL?.trim();
+async function getPublicOrigin(request: Request): Promise<string> {
+  const runtime = await getRuntimeSettings();
+  const configuredPublicBase = runtime.publicAppUrl?.trim();
   if (configuredPublicBase) {
     try {
       const parsed = new URL(configuredPublicBase);
@@ -74,8 +77,8 @@ export async function POST(request: Request) {
     const outputPath = path.join(UPLOAD_DIR, fileName);
     await fs.writeFile(outputPath, buffer);
 
-    const url = `/uploads/${fileName}`;
-    const absoluteUrl = `${getPublicOrigin(request)}${url}`;
+    const url = buildFilesApiPath("uploads", fileName);
+    const absoluteUrl = `${await getPublicOrigin(request)}${url}`;
 
     return NextResponse.json({
       data: {

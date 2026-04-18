@@ -4,6 +4,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import ffmpegPath from "ffmpeg-static";
+import { getAppRoot, getPublicPath } from "@/lib/runtime-path";
 
 export interface OptimizeVoiceOverOptions {
   inputBuffer: Buffer;
@@ -25,6 +26,11 @@ export interface MixBackgroundMusicOptions {
   outputExtension?: "mp3" | "wav";
 }
 
+export interface PlayableAudioNormalizationResult {
+  buffer: Buffer;
+  durationSeconds?: number;
+}
+
 function normalizeRootAliasPath(inputPath: string): string {
   if (!inputPath) {
     return inputPath;
@@ -32,7 +38,7 @@ function normalizeRootAliasPath(inputPath: string): string {
 
   // Next server runtime may return paths like /ROOT/node_modules/... from bundled modules.
   if (/^[\\/]+ROOT[\\/]/i.test(inputPath)) {
-    return path.join(process.cwd(), inputPath.replace(/^[\\/]+ROOT[\\/]?/i, ""));
+    return path.join(getAppRoot(), inputPath.replace(/^[\\/]+ROOT[\\/]?/i, ""));
   }
 
   return inputPath;
@@ -56,7 +62,7 @@ async function resolveFfmpegBinaryPath(): Promise<string> {
   }
 
   const platformBinary = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
-  candidates.push(path.join(process.cwd(), "node_modules", "ffmpeg-static", platformBinary));
+  candidates.push(path.join(getAppRoot(), "node_modules", "ffmpeg-static", platformBinary));
 
   for (const candidate of candidates) {
     if (!candidate) {
@@ -125,6 +131,53 @@ async function readAudioDurationSeconds(inputPath: string): Promise<number | und
   return parseDurationFromFfmpegLog(log);
 }
 
+export async function getAudioDurationSecondsFromBuffer(
+  inputBuffer: Buffer,
+  inputExtension: "mp3" | "wav" = "mp3"
+): Promise<number | undefined> {
+  const inputPath = buildTempPath(inputExtension);
+
+  try {
+    await fs.writeFile(inputPath, inputBuffer);
+    return await readAudioDurationSeconds(inputPath);
+  } finally {
+    await Promise.allSettled([fs.unlink(inputPath)]);
+  }
+}
+
+export async function transcodeAudioBufferToMp3(
+  inputBuffer: Buffer,
+  inputExtension: "mp3" | "wav" = "mp3"
+): Promise<PlayableAudioNormalizationResult> {
+  const inputPath = buildTempPath(inputExtension);
+  const outputPath = buildTempPath("mp3");
+
+  try {
+    await fs.writeFile(inputPath, inputBuffer);
+    await runFfmpeg([
+      "-y",
+      "-i",
+      inputPath,
+      "-vn",
+      "-c:a",
+      "libmp3lame",
+      "-q:a",
+      "3",
+      outputPath,
+    ]);
+
+    const outputBuffer = await fs.readFile(outputPath);
+    const durationSeconds = await readAudioDurationSeconds(outputPath);
+
+    return {
+      buffer: outputBuffer,
+      durationSeconds,
+    };
+  } finally {
+    await Promise.allSettled([fs.unlink(inputPath), fs.unlink(outputPath)]);
+  }
+}
+
 function buildAtempoChain(speedFactor: number): string {
   const factors: number[] = [];
   let remaining = speedFactor;
@@ -146,10 +199,10 @@ function buildAtempoChain(speedFactor: number): string {
 function resolveBackgroundMusicPath(): string {
   const fromEnv = process.env.BACKGROUND_MUSIC_PATH?.trim();
   if (fromEnv) {
-    return path.isAbsolute(fromEnv) ? fromEnv : path.join(process.cwd(), fromEnv);
+    return path.isAbsolute(fromEnv) ? fromEnv : path.join(getAppRoot(), fromEnv);
   }
 
-  return path.join(process.cwd(), "public", "bg-music", "default.mp3");
+  return getPublicPath("bg-music", "default.mp3");
 }
 
 export async function optimizeVoiceOverAudio(

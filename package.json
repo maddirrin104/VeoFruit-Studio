@@ -2,11 +2,15 @@
   "name": "veofruit-studio",
   "version": "0.1.0",
   "private": true,
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "next dev --hostname localhost --port 3200",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "desktop:dev": "electron .",
+    "desktop:build": "npm run build && electron-builder --win --x64 --publish never",
+    "desktop:dist": "npm run desktop:build"
   },
   "dependencies": {
     "@google/genai": "^1.46.0",
@@ -26,11 +30,40 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "electron": "^41.2.1",
+    "electron-builder": "^26.8.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.7",
     "prisma": "^6.19.2",
     "tailwindcss": "^4.2.1",
     "typescript": "^5"
+  },
+  "build": {
+    "appId": "com.veofruit.studio",
+    "productName": "VeoFruit Studio",
+    "asar": false,
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      ".next/**/*",
+      "public/**/*",
+      "src/**/*",
+      "prisma/**/*",
+      "node_modules/**/*",
+      "package.json",
+      "next.config.mjs",
+      "prisma.config.ts"
+    ],
+    "asarUnpack": [
+      "node_modules/@prisma/**/*",
+      "node_modules/ffmpeg-static/**/*"
+    ],
+    "win": {
+      "target": ["nsis"],
+      "signAndEditExecutable": false
+    }
   },
   "overrides": {
     "effect": "^3.20.0"

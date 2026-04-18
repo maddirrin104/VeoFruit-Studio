@@ -22,6 +22,11 @@ type PreviewPanelProps = {
   onSampleImageChange: (file: File | null) => void;
   isSampleImageUploading?: boolean;
   sampleImageReady?: boolean;
+  brandImageUrl?: string;
+  brandImageName?: string;
+  onBrandImageChange: (file: File | null) => void;
+  isBrandImageUploading?: boolean;
+  brandImageReady?: boolean;
   referenceImageUrl?: string;
   onReferenceImageUrlChange?: (url: string) => void;
   generationStatus?: "idle" | "pending" | "processing" | "completed" | "failed";
@@ -42,6 +47,11 @@ export function PreviewPanel({
   onSampleImageChange,
   isSampleImageUploading = false,
   sampleImageReady = false,
+  brandImageUrl,
+  brandImageName,
+  onBrandImageChange,
+  isBrandImageUploading = false,
+  brandImageReady = false,
   referenceImageUrl,
   onReferenceImageUrlChange,
   generationStatus = "idle",
@@ -199,12 +209,12 @@ export function PreviewPanel({
 
         <div className="mt-4 space-y-3 rounded-xl border border-dashed border-[#b4ddc5] bg-[#eff9f3] p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-[#4a7e65]">
-            Ảnh sản phẩm mẫu (tùy chọn)
+            Ảnh sản phẩm và ảnh brand (tùy chọn)
           </p>
 
           {/* Option 1: Upload file */}
           <div className="space-y-2">
-            <p className="text-xs text-[#5f8f79]">Tùy chọn 1: Tải từ máy tính</p>
+            <p className="text-xs text-[#5f8f79]">Tùy chọn 1: Ảnh sản phẩm từ máy tính</p>
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#8ed0ad] bg-white px-3 py-2 text-xs font-semibold text-[#1b6e48] transition hover:border-[#67c193]">
               <ImagePlus className="size-4" />
               Tải ảnh mẫu
@@ -245,9 +255,50 @@ export function PreviewPanel({
           {/* Divider */}
           <div className="border-t border-[#a8dfbf]"></div>
 
+          <div className="space-y-2">
+            <p className="text-xs text-[#5f8f79]">Tùy chọn 2: Ảnh brand/background từ máy tính</p>
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#8ed0ad] bg-white px-3 py-2 text-xs font-semibold text-[#1b6e48] transition hover:border-[#67c193]">
+              <ImagePlus className="size-4" />
+              Tải ảnh brand
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => {
+                  onBrandImageChange(event.target.files?.[0] ?? null);
+                }}
+              />
+            </label>
+
+            {brandImageUrl ? (
+              <div className="overflow-hidden rounded-lg border border-[#a8d8bc] bg-white">
+                <Image
+                  src={brandImageUrl}
+                  alt="Ảnh brand/background"
+                  width={400}
+                  height={160}
+                  unoptimized
+                  className="h-24 w-full object-cover"
+                />
+                <p className="truncate px-3 py-2 text-xs text-[#3f6f5a]">{brandImageName}</p>
+              </div>
+            ) : null}
+
+            {isBrandImageUploading ? (
+              <p className="text-xs text-[#3f7a60]">Đang tải ảnh brand lên máy chủ...</p>
+            ) : brandImageReady ? (
+              <p className="text-xs text-[#1e6f4a]">✓ Ảnh brand đã sẵn sàng từ file upload.</p>
+            ) : brandImageUrl ? (
+              <p className="text-xs text-[#5f8f79]">Ảnh chỉ để xem trước cho đến khi tải lên hoàn tất.</p>
+            ) : null}
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-[#a8dfbf]"></div>
+
           {/* Option 2: Direct HTTPS URL */}
           <div className="space-y-2">
-            <p className="text-xs text-[#5f8f79]">Tùy chọn 2: Nhập URL ảnh từ web (HTTPS)</p>
+            <p className="text-xs text-[#5f8f79]">Tùy chọn 3: Nhập URL ảnh từ web (HTTPS)</p>
             <div>
               <input
                 type="text"

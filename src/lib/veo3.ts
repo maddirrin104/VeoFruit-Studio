@@ -1,12 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-
-const apiKey = process.env.GOOGLE_API_KEY;
-
-if (!apiKey) {
-  throw new Error("GOOGLE_API_KEY environment variable is required");
-}
-
-const genAI = new GoogleGenAI({ apiKey });
+import { getRuntimeSettings } from "@/lib/runtime-settings";
 
 export class Veo3Error extends Error {
   code: "QUOTA_EXCEEDED" | "RATE_LIMITED" | "API_ERROR";
@@ -134,8 +127,10 @@ function buildLocationLockHints(sceneLocation?: string): string[] {
   }
 
   if (normalized.includes("cửa hàng") || normalized.includes("cua hang") || normalized.includes("shop")) {
-    hints.push("- Keep small fruit-shop context consistently: compact storefront vibe, close seller-customer distance.");
-    hints.push("- Forbidden location shifts: farm orchards and supermarket aisle look.");
+    hints.push("- Keep fruit-shop context consistently: compact storefront vibe, product display shelves/tables, close and personal seller-customer interaction.");
+    hints.push("- Shop interior: organized fruit displays, vendor area, maybe a counter or scale visible, warm and welcoming atmosphere.");
+    hints.push("- Forbidden location shifts: farm orchards, supermarket aisle look with overstocked shelves, open-air market stalls, warehouse feel.");
+    hints.push("- Focus on hero fruit prominently displayed in the shop (on counter, table, or in vendor's hand).");
   }
 
   if (normalized.includes("bếp") || normalized.includes("bep") || normalized.includes("kitchen")) {
@@ -176,6 +171,17 @@ export async function generateVideoWithVeo3(
   durationSeconds: number = 15
 ): Promise<Veo3VideoResponse> {
   try {
+    const runtime = await getRuntimeSettings();
+    if (!runtime.googleApiKey) {
+      throw new Veo3Error(
+        "GOOGLE_API_KEY chưa được cấu hình. Hãy mở phần Settings trong app để nhập API key Veo3/Gemini.",
+        "API_ERROR",
+        false
+      );
+    }
+
+    const genAI = new GoogleGenAI({ apiKey: runtime.googleApiKey });
+
     console.log(`[Veo3] Generating video with prompt: ${prompt.substring(0, 100)}...`);
     
     // Start video generation
@@ -310,7 +316,24 @@ export function buildVideoPrompt(
       ? otherDetails.storyTopic.trim()
       : "the referenced product";
 
-  const referenceImageGuidance = otherDetails?.hasReferenceImage
+  const referenceImageGuidance = otherDetails?.hasBrandBackgroundImage
+    ? [
+        otherDetails?.hasReferenceImage
+          ? "Reference image rules (composite product + brand background, must follow):"
+          : "Reference image rules (brand background guide, must follow):",
+        `- Product anchor: ${referenceProductAnchor}.`,
+        `- Brand/background anchor: ${typeof otherDetails?.brandBackgroundImageName === "string" && otherDetails.brandBackgroundImageName.trim().length > 0 ? otherDetails.brandBackgroundImageName.trim() : "uploaded brand storefront image"}.`,
+        otherDetails?.hasReferenceImage
+          ? "- The reference image should be treated as a combined visual guide: fruit identity comes from the product reference, and the storefront/background identity comes from the brand reference."
+          : "- The uploaded brand/background image should define the storefront, signage placement, counter layout, and overall brand feel.",
+        "- Keep the storefront, signage placement, counter layout, and brand feel consistent with the brand/background image.",
+        "- Keep the anchored fruit clearly visible in every shot as the HERO OBJECT, occupying the main visual focus in the frame.",
+        "- Keep product details consistent across all scenes: color tone, texture, size ratio, and recognizable shape.",
+        "- Do not replace the fruit with a different product, but also do not flatten the scene into a pure product still-life; the brand storefront should remain the setting.",
+        "- The presenter/character can stand beside or in front of the storefront, but must not block the fruit hero.",
+        "- Follow script progression shot-by-shot; keep the advertisement feeling like the same real brand location throughout.",
+      ].join("\n")
+    : otherDetails?.hasReferenceImage
     ? [
         "Reference image rules (must follow):",
         `- Reference image source: ${referenceImageSourceLabel}.`,
@@ -382,7 +405,58 @@ export function buildVideoPrompt(
     typeof otherDetails?.sceneLocation === "string" ? otherDetails.sceneLocation.trim() : "";
   const locationLockHints = buildLocationLockHints(selectedSceneLocation);
 
+  // Add background fruit consistency hints for farm and shop scenes
+  const backgroundFruitConsistencyHints: string[] = [];
+  const isFarmLocation =
+    selectedSceneLocation.toLowerCase().includes("nông trại") ||
+    selectedSceneLocation.toLowerCase().includes("nong trai") ||
+    selectedSceneLocation.toLowerCase().includes("farm");
+
+  const isShopLocation =
+    selectedSceneLocation.toLowerCase().includes("cửa hàng") ||
+    selectedSceneLocation.toLowerCase().includes("cua hang") ||
+    selectedSceneLocation.toLowerCase().includes("shop") ||
+    selectedSceneLocation.toLowerCase().includes("quầy");
+
+  if (isFarmLocation && mainProductTopic) {
+    backgroundFruitConsistencyHints.push(
+      "CRITICAL - Background fruit consistency (must follow for farm scenes):",
+      `- Main hero fruit: ${mainProductTopic}.`,
+      `- If orchard/farm background is shown, ALL visible fruits in trees, baskets, or rows must be ${mainProductTopic} ONLY.`,
+      `- Do NOT mix different fruit types (e.g., banana with apple, strawberry with orange) in the same background frame.`,
+      `- Example: If hero is mango, the farm background orchard trees must ONLY show mangos hanging/growing, never apple trees or other fruits.`,
+      `- Color consistency: Keep the background ${mainProductTopic} the same color tone and ripeness level as the hero product.`,
+      `- If showing harvest baskets or harvest scenes, they must contain ONLY ${mainProductTopic}, not a mixed fruit medley.`,
+      `- Avoid generic 'fruit farm' visuals with random assorted fruits; commit to single-fruit orchard aesthetic for ${mainProductTopic}.`,
+      `- This creates visual harmony and prevents the background from looking fake or cluttered with mismatched produce.`
+    );
+  }
+
+  if (isShopLocation && mainProductTopic) {
+    backgroundFruitConsistencyHints.push(
+      "CRITICAL - Background fruit consistency (must follow for fruit shop scenes):",
+      `- Main hero fruit: ${mainProductTopic}.`,
+      `- Shop display counter/shelves must PRIMARILY showcase ${mainProductTopic}, not a random mix of fruits.`,
+      `- Background fruits in shop displays should be SAME TYPE as hero fruit (${mainProductTopic} only), not assorted fruits.`,
+      `- Example: If hero is strawberry, shop counter displays strawberries prominently, not strawberries mixed with mangoes, apples, and bananas.`,
+      `- Color consistency: Keep visible ${mainProductTopic} in background the same color tone and ripeness level as the hero product.`,
+      `- Shop aesthetic: Clean, organized, with hero fruit as the clear focal point. Avoid cluttered multi-fruit chaos.`,
+      `- If other fruits must appear (inevitable in real shop), keep them SIGNIFICANTLY OUT OF FOCUS or in the far background.`,
+      `- If a brand storefront image is provided, preserve the brand facade, signboard, and counter layout; do not convert it into a generic produce market.`,
+      `- This creates a cohesive, professional look and makes the video feel authentic to a specialty fruit shop, not a generic produce market.`
+    );
+  }
+
   // Keep style directives first so they survive provider-side prompt trimming.
+  const presenterLockHints = otherDetails?.hasReferenceImage
+    ? [
+        "Character lock (critical, must follow):",
+        "- A Vietnamese presenter must be visible from the first frame to the final frame.",
+        "- Do not generate fruit-only shots without the presenter.",
+        "- In every scene, show presenter + hero fruit together at least once.",
+      ]
+    : [];
+
   const directionBlock = [
     "Create a professional fruit product video.",
     "Cultural direction (must follow):",
@@ -390,7 +464,9 @@ export function buildVideoPrompt(
     "- Visual cues should feel local to Vietnam and strictly align with the selected scene location.",
     "- Keep wardrobe, gestures, and pacing natural for Vietnamese audience; avoid overly Western styling.",
     "- Skin tones, lighting, props, and food presentation should feel authentic to Vietnam.",
+    ...presenterLockHints,
     ...locationLockHints,
+    ...backgroundFruitConsistencyHints,
     ...productLockHints,
     `Visual style: ${visualStyle}.`,
     `Emotional tone: ${emotionStyle}.`,

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { buildVideoPrompt } from "@/lib/veo3";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma";
 import {
   RunwayGenerationError,
   generateVideoWithRunway,
@@ -20,14 +20,15 @@ import {
   buildNarrationText,
   estimateNarrationDurationSeconds,
 } from "@/lib/audio-narration";
+import { getRuntimeSettings } from "@/lib/runtime-settings";
 import {
   mixBackgroundMusic,
   optimizeVoiceOverAudio,
 } from "@/lib/audio-postprocess";
+import { buildFilesApiPath, getPublicPath } from "@/lib/runtime-path";
+import { ensurePlayableMp3Buffer } from "@/lib/audio-validation";
 import { CreateGenerationRequest } from "@/types/studio";
-
-const googleApiKey = process.env.GOOGLE_API_KEY;
-const genAI = googleApiKey ? new GoogleGenAI({ apiKey: googleApiKey, apiVersion: "v1" }) : null;
+import { downloadAndSaveVideo } from "@/lib/video-storage";
 
 type VideoProjectRecord = NonNullable<
   Awaited<ReturnType<typeof prisma.videoProject.findUnique>>
@@ -90,6 +91,11 @@ function tryParseTranslatedContext(rawText: string): Partial<TranslatedPromptCon
 async function translatePromptContextToEnglish(
   context: PromptContext
 ): Promise<TranslatedPromptContext> {
+  const runtime = await getRuntimeSettings();
+  const genAI = runtime.googleApiKey
+    ? new GoogleGenAI({ apiKey: runtime.googleApiKey, apiVersion: "v1" })
+    : null;
+
   if (!genAI) {
     return context;
   }
@@ -172,13 +178,13 @@ function getAudioUrlFromVoiceSettings(voiceSettings: Prisma.JsonValue | null): s
   return typeof audioUrl === "string" ? audioUrl : undefined;
 }
 
-const AUDIO_OUTPUT_DIR = path.join(process.cwd(), "public", "generated-audio");
+const AUDIO_OUTPUT_DIR = getPublicPath("generated-audio");
 
 async function persistAudio(buffer: Buffer, fileName: string): Promise<string> {
   await fs.mkdir(AUDIO_OUTPUT_DIR, { recursive: true });
   const filePath = path.join(AUDIO_OUTPUT_DIR, fileName);
   await fs.writeFile(filePath, buffer);
-  return `/generated-audio/${fileName}`;
+  return buildFilesApiPath("generated-audio", fileName);
 }
 
 export async function POST(request: NextRequest) {
@@ -321,6 +327,153 @@ export async function GET(request: NextRequest) {
 }
 
 /**
+ * Generate audio for a video generation (used in parallel with video generation)
+ * Handles FPT TTS, optimization, mixing - returns voice settings object
+ */
+async function generateAudioForGeneration({
+  generationId,
+  narrationTextForSync,
+  audioConfig,
+  videoConfig,
+}: {
+  generationId: string;
+  narrationTextForSync: string;
+  audioConfig: CreateGenerationRequest["audioConfig"];
+  videoConfig: CreateGenerationRequest["videoConfig"];
+}): Promise<Prisma.InputJsonObject> {
+  const narrationMode =
+    audioConfig?.narrationMode === "script_read_along"
+      ? "script_read_along"
+      : "separate_voiceover";
+
+  const voiceSettings: Prisma.InputJsonObject = {
+    ...audioConfig,
+    provider: "fpt-ai",
+    narrationMode,
+    status: "skipped",
+  };
+
+  const fptConfigured = await isFptConfigured();
+
+  if (!fptConfigured) {
+    return {
+      ...voiceSettings,
+      status: "skipped",
+      reason:
+        narrationMode === "script_read_along"
+          ? "Chế độ đọc theo kịch bản cần FPT_AI_API_KEY để tạo audio tự động."
+          : "FPT_AI_API_KEY is not configured",
+    };
+  }
+
+  try {
+    const voiceDiagnostic = await buildFptVoiceDiagnosticConfig({
+      voiceType: audioConfig.voiceGender,
+      language: audioConfig.language,
+      readSpeed: audioConfig.readSpeed,
+      emotionIntensity: audioConfig.emotionIntensity,
+      outputFormat: audioConfig.outputFormat,
+    });
+
+    const audioBuffer = await generateVoiceOverWithFpt({
+      text: narrationTextForSync,
+      settings: {
+        voiceType: audioConfig.voiceGender,
+        language: audioConfig.language,
+        readSpeed: audioConfig.readSpeed,
+        emotionIntensity: audioConfig.emotionIntensity,
+        outputFormat: audioConfig.outputFormat,
+      },
+    });
+
+    const validatedRawVoice = await ensurePlayableMp3Buffer(
+      audioBuffer,
+      "FPT generation voice"
+    );
+
+    const optimizedVoice = await optimizeVoiceOverAudio({
+      inputBuffer: validatedRawVoice.buffer,
+      targetDurationSeconds: videoConfig.durationSeconds,
+      inputExtension: "mp3",
+    });
+
+    let stableVoice = await ensurePlayableMp3Buffer(
+      optimizedVoice.buffer,
+      "Optimized generation voice"
+    ).catch((validationError) => {
+      console.warn(
+        `[Generation ${generationId}] Optimized voice invalid, fallback to raw buffer:`,
+        validationError
+      );
+      return validatedRawVoice;
+    });
+
+    const withBgMusic = audioConfig.bgMusicEnabled
+      ? await mixBackgroundMusic({
+          voiceBuffer: stableVoice.buffer,
+          voiceDurationSeconds:
+            optimizedVoice.durationAfterSeconds ?? stableVoice.durationSeconds,
+          outputExtension: "mp3",
+        })
+      : { buffer: stableVoice.buffer, mixed: false as const };
+
+    stableVoice = await ensurePlayableMp3Buffer(
+      withBgMusic.buffer,
+      "Final generation voice"
+    ).catch((validationError) => {
+      console.warn(
+        `[Generation ${generationId}] Mixed voice invalid, fallback to previous playable buffer:`,
+        validationError
+      );
+      return stableVoice;
+    });
+
+    const outputExt = audioConfig.outputFormat === "wav" ? "mp3" : audioConfig.outputFormat;
+    const audioFileName = buildAudioFileName(`gen-${generationId}`, outputExt);
+    const audioUrl = await persistAudio(stableVoice.buffer, audioFileName);
+
+    return {
+      ...audioConfig,
+      provider: "fpt-ai",
+      narrationMode,
+      voiceId: voiceDiagnostic.voice,
+      voiceConfig: {
+        speed: voiceDiagnostic.speed,
+        outputFormat: voiceDiagnostic.outputFormat,
+      },
+      status: "completed",
+      audioUrl,
+      narrationText: narrationTextForSync,
+      estimatedDurationSeconds: estimateNarrationDurationSeconds(
+        narrationTextForSync,
+        audioConfig.language,
+        audioConfig.readSpeed
+      ),
+      postProcessing: {
+        trimmedSilence: optimizedVoice.trimmedSilence,
+        durationBeforeSeconds: optimizedVoice.durationBeforeSeconds,
+        durationAfterSeconds: optimizedVoice.durationAfterSeconds,
+        speedFactorApplied: optimizedVoice.speedFactorApplied,
+        backgroundMusicEnabled: Boolean(audioConfig.bgMusicEnabled),
+        backgroundMusicMixed: withBgMusic.mixed,
+        backgroundMusicNote: withBgMusic.reason,
+      },
+    };
+  } catch (audioError) {
+    console.error(`[Generation ${generationId}] Voice-over failed:`, audioError);
+    return {
+      ...audioConfig,
+      provider: "fpt-ai",
+      narrationMode,
+      status: "failed",
+      error:
+        (audioError as Error)?.message ||
+        "Không thể tạo voice-over tự động. Video vẫn được tạo thành công.",
+    };
+  }
+}
+
+/**
  * Run video generation in background (non-blocking)
  */
 async function generateVideoInBackground(
@@ -362,8 +515,24 @@ async function generateVideoInBackground(
       imageConfig.referenceImageName.trim().length > 0
         ? imageConfig.referenceImageName.trim()
         : undefined;
+    const brandBackgroundImageUrl =
+      typeof imageConfig?.brandBackgroundImageUrl === "string" &&
+      imageConfig.brandBackgroundImageUrl.trim().length > 0
+        ? imageConfig.brandBackgroundImageUrl.trim()
+        : undefined;
+    const brandBackgroundImageName =
+      typeof imageConfig?.brandBackgroundImageName === "string" &&
+      imageConfig.brandBackgroundImageName.trim().length > 0
+        ? imageConfig.brandBackgroundImageName.trim()
+        : undefined;
+    const brandBackgroundImageSource =
+      imageConfig?.brandBackgroundImageSource === "url" ||
+      imageConfig?.brandBackgroundImageSource === "upload"
+        ? imageConfig.brandBackgroundImageSource
+        : undefined;
 
     const hasReferenceImage = Boolean(referenceImageUrl);
+    const hasBrandBackgroundImage = Boolean(brandBackgroundImageUrl);
     const effectiveSubjectConsistent = hasReferenceImage
       ? true
       : Boolean(imageConfig.subjectConsistent);
@@ -403,6 +572,9 @@ async function generateVideoInBackground(
         hasReferenceImage,
         referenceImageSource,
         referenceImageName,
+        hasBrandBackgroundImage,
+        brandBackgroundImageSource,
+        brandBackgroundImageName,
         narrationGuide: translatedPromptContext.narrationGuide || narrationTextForSync,
       }
     );
@@ -411,115 +583,54 @@ async function generateVideoInBackground(
       `[Generation ${generationId}] Starting Runway video generation${referenceImageUrl ? " (image-to-video mode)" : ""}...`
     );
 
-    const result = await generateVideoWithRunway({
-      prompt,
-      model: "gen4.5",
-      ratio: mapAspectRatioToRunwayRatio(videoConfig.aspectRatio),
-      durationSeconds: videoConfig.durationSeconds,
-      promptImageUrl: referenceImageUrl,
-    });
+    // Runway currently accepts one prompt image per task.
+    // When both product + brand images exist, prioritize brand/background as the scene anchor,
+    // while product identity is constrained by prompt text rules.
+    const promptImageUrlForRunway = hasBrandBackgroundImage
+      ? brandBackgroundImageUrl
+      : referenceImageUrl;
 
-    const narrationMode =
-      audioConfig?.narrationMode === "script_read_along"
-        ? "script_read_along"
-        : "separate_voiceover";
+    // RUN VIDEO + AUDIO IN PARALLEL for faster generation (save ~20 seconds)
+    console.log(`[Generation ${generationId}] Starting Runway video + FPT audio in parallel...`);
+    
+    const [runwayResult, voiceSettings] = await Promise.all([
+      // Video generation (returns the runway result)
+      generateVideoWithRunway({
+        prompt,
+        model: "gen4.5",
+        ratio: mapAspectRatioToRunwayRatio(videoConfig.aspectRatio),
+        durationSeconds: videoConfig.durationSeconds,
+        promptImageUrl: promptImageUrlForRunway,
+      }).then(result => {
+        console.log(`[Generation ${generationId}] ✅ Runway video generation completed`);
+        return result;
+      }),
+      
+      // Audio generation (returns voice settings)
+      generateAudioForGeneration({
+        generationId,
+        narrationTextForSync,
+        audioConfig,
+        videoConfig,
+      }).then(settings => {
+        console.log(`[Generation ${generationId}] ✅ Audio generation completed`);
+        return settings;
+      }),
+    ]);
+    
+    // Use parallel results
+    const result = runwayResult;
 
-    let voiceSettings: Prisma.InputJsonObject = {
-      ...audioConfig,
-      provider: "fpt-ai",
-      narrationMode,
-      status: "skipped",
-    };
-
-    if (!isFptConfigured()) {
-      voiceSettings = {
-        ...voiceSettings,
-        status: "skipped",
-        reason:
-          narrationMode === "script_read_along"
-            ? "Chế độ đọc theo kịch bản cần FPT_AI_API_KEY để tạo audio tự động."
-            : "FPT_AI_API_KEY is not configured",
-      };
-    }
-
-    if (isFptConfigured()) {
-      try {
-        const voiceDiagnostic = buildFptVoiceDiagnosticConfig({
-          voiceType: audioConfig.voiceGender,
-          language: audioConfig.language,
-          readSpeed: audioConfig.readSpeed,
-          emotionIntensity: audioConfig.emotionIntensity,
-          outputFormat: audioConfig.outputFormat,
-        });
-
-        const audioBuffer = await generateVoiceOverWithFpt({
-          text: narrationTextForSync,
-          settings: {
-            voiceType: audioConfig.voiceGender,
-            language: audioConfig.language,
-            readSpeed: audioConfig.readSpeed,
-            emotionIntensity: audioConfig.emotionIntensity,
-            outputFormat: audioConfig.outputFormat,
-          },
-        });
-
-        const optimizedVoice = await optimizeVoiceOverAudio({
-          inputBuffer: audioBuffer,
-          targetDurationSeconds: videoConfig.durationSeconds,
-          inputExtension: "mp3",
-        });
-
-        const withBgMusic = audioConfig.bgMusicEnabled
-          ? await mixBackgroundMusic({
-              voiceBuffer: optimizedVoice.buffer,
-              voiceDurationSeconds: optimizedVoice.durationAfterSeconds,
-              outputExtension: "mp3",
-            })
-          : { buffer: optimizedVoice.buffer, mixed: false as const };
-
-        const outputExt = audioConfig.outputFormat === "wav" ? "mp3" : audioConfig.outputFormat;
-        const audioFileName = buildAudioFileName(`gen-${generationId}`, outputExt);
-        const audioUrl = await persistAudio(withBgMusic.buffer, audioFileName);
-
-        voiceSettings = {
-          ...audioConfig,
-          provider: "fpt-ai",
-          narrationMode,
-          voiceId: voiceDiagnostic.voice,
-          voiceConfig: {
-            speed: voiceDiagnostic.speed,
-            outputFormat: voiceDiagnostic.outputFormat,
-          },
-          status: "completed",
-          audioUrl,
-          narrationText: narrationTextForSync,
-          estimatedDurationSeconds: estimateNarrationDurationSeconds(
-            narrationTextForSync,
-            audioConfig.language,
-            audioConfig.readSpeed
-          ),
-          postProcessing: {
-            trimmedSilence: optimizedVoice.trimmedSilence,
-            durationBeforeSeconds: optimizedVoice.durationBeforeSeconds,
-            durationAfterSeconds: optimizedVoice.durationAfterSeconds,
-            speedFactorApplied: optimizedVoice.speedFactorApplied,
-            backgroundMusicEnabled: Boolean(audioConfig.bgMusicEnabled),
-            backgroundMusicMixed: withBgMusic.mixed,
-            backgroundMusicNote: withBgMusic.reason,
-          },
-        };
-      } catch (audioError) {
-        console.error(`[Generation ${generationId}] Voice-over failed:`, audioError);
-        voiceSettings = {
-          ...audioConfig,
-          provider: "fpt-ai",
-          narrationMode,
-          status: "failed",
-          error:
-            (audioError as Error)?.message ||
-            "Không thể tạo voice-over tự động. Video vẫn được tạo thành công.",
-        };
-      }
+    // Download and save video locally
+    let finalVideoUrl = result.videoUrl;
+    try {
+      console.log(`[Generation ${generationId}] Saving video to local storage...`);
+      finalVideoUrl = await downloadAndSaveVideo(result.videoUrl, generationId);
+    } catch (storageError) {
+      console.error(`[Generation ${generationId}] Failed to save video locally:`, storageError);
+      // Fallback to remote URL if local storage fails
+      console.warn(`[Generation ${generationId}] Falling back to remote video URL`);
+      finalVideoUrl = result.videoUrl;
     }
 
     // Update generation with success
@@ -527,7 +638,7 @@ async function generateVideoInBackground(
       where: { id: generationId },
       data: {
         status: "completed",
-        outputUrl: result.videoUrl,
+        outputUrl: finalVideoUrl,
         voiceSettings,
       },
     });

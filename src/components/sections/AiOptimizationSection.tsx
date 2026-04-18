@@ -16,6 +16,7 @@ import {
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { ToggleSwitch } from "@/components/ui/ToggleSwitch";
 import { getVoiceLabel, VOICE_DEFINITIONS, type VoiceType } from "@/lib/voice-options";
+import { parseVoiceLabel } from "@/lib/voice-parsing";
 
 type AiOptimizationSectionProps = {
   emotionStyle: string;
@@ -250,13 +251,22 @@ export function AiOptimizationSection({
                           onClick={() => onVoiceTypeChange(voice.id)}
                           className="min-w-0 flex-1 text-left"
                         >
-                          <p
-                            className={`truncate text-sm font-semibold leading-tight ${
-                              active ? "text-[#0f8f4e]" : "text-[#2f7056]"
-                            }`}
-                          >
-                            {voice.label}
-                          </p>
+                            <div className="space-y-0.5">
+                              <p
+                                className={`text-sm font-semibold leading-tight ${
+                                  active ? "text-[#0f8f4e]" : "text-[#2f7056]"
+                                }`}
+                              >
+                                {parseVoiceLabel(voice.label).name}
+                              </p>
+                              <p
+                                className={`text-xs leading-tight ${
+                                  active ? "text-[#10b862]" : "text-[#5f8f79]"
+                                }`}
+                              >
+                                {parseVoiceLabel(voice.label).region}
+                              </p>
+                            </div>
                         </button>
 
                         <button

@@ -4,10 +4,13 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   buildAudioFileName,
   generateVoiceOverWithFpt,
+  isFptAudioNotReadyError,
   isFptConfigured,
   type VoiceType,
 } from "@/lib/fpt-tts";
 import { extractDialogueLinesFromScript } from "@/lib/audio-narration";
+import { buildFilesApiPath, getPublicPath } from "@/lib/runtime-path";
+import { ensurePlayableMp3Buffer } from "@/lib/audio-validation";
 
 interface PreviewVoiceRequest {
   script?: string;
@@ -21,7 +24,8 @@ interface PreviewVoiceRequest {
   };
 }
 
-const AUDIO_OUTPUT_DIR = path.join(process.cwd(), "public", "generated-audio");
+const AUDIO_OUTPUT_DIR = getPublicPath("generated-audio");
+const PREVIEW_MAX_ATTEMPTS = 3;
 
 function normalizeSpacing(text: string): string {
   return text.replace(/\s+/g, " ").trim();
@@ -101,12 +105,16 @@ async function persistAudio(buffer: Buffer, fileName: string): Promise<string> {
   await fs.mkdir(AUDIO_OUTPUT_DIR, { recursive: true });
   const filePath = path.join(AUDIO_OUTPUT_DIR, fileName);
   await fs.writeFile(filePath, buffer);
-  return `/generated-audio/${fileName}`;
+  return buildFilesApiPath("generated-audio", fileName);
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export async function POST(request: NextRequest) {
   try {
-    if (!isFptConfigured()) {
+    if (!(await isFptConfigured())) {
       return NextResponse.json(
         { error: "FPT_AI_API_KEY is not configured" },
         { status: 400 }
@@ -122,20 +130,47 @@ export async function POST(request: NextRequest) {
     }
 
     const sampleText = buildPreviewText(body.audioConfig.language, body.storyTopic, body.script);
-    const voiceBuffer = await generateVoiceOverWithFpt({
-      text: sampleText,
-      settings: {
-        voiceType: body.audioConfig.voiceGender,
-        readSpeed: body.audioConfig.readSpeed,
-        emotionIntensity: body.audioConfig.emotionIntensity,
-        outputFormat: body.audioConfig.outputFormat,
-        language: body.audioConfig.language,
-      },
-    });
+    let playablePreviewBuffer: Buffer | undefined;
+    let lastAttemptError: unknown;
 
-    const outputExt = body.audioConfig.outputFormat === "wav" ? "mp3" : body.audioConfig.outputFormat;
-    const fileName = buildAudioFileName("voice-preview", outputExt);
-    const audioUrl = await persistAudio(voiceBuffer, fileName);
+    for (let attempt = 1; attempt <= PREVIEW_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        console.info(`[preview-voice] attempt ${attempt}/${PREVIEW_MAX_ATTEMPTS}`);
+        const voiceBuffer = await generateVoiceOverWithFpt({
+          text: sampleText,
+          settings: {
+            voiceType: body.audioConfig.voiceGender,
+            readSpeed: body.audioConfig.readSpeed,
+            emotionIntensity: body.audioConfig.emotionIntensity,
+            outputFormat: body.audioConfig.outputFormat,
+            language: body.audioConfig.language,
+          },
+        }, {
+          maxWaitMs: 20000,
+          maxJobAttempts: 1,
+        });
+
+        const checkedPreview = await ensurePlayableMp3Buffer(
+          voiceBuffer,
+          "Preview voice"
+        );
+        playablePreviewBuffer = checkedPreview.buffer;
+        break;
+      } catch (error) {
+        lastAttemptError = error;
+        console.warn(`[preview-voice] attempt ${attempt} failed:`, error);
+        if (attempt < PREVIEW_MAX_ATTEMPTS) {
+          await sleep(450 * attempt);
+        }
+      }
+    }
+
+    if (!playablePreviewBuffer) {
+      throw lastAttemptError ?? new Error("Failed to create playable preview voice audio");
+    }
+
+    const fileName = buildAudioFileName("voice-preview", "mp3");
+    const audioUrl = await persistAudio(playablePreviewBuffer, fileName);
 
     return NextResponse.json({
       data: {
@@ -145,6 +180,18 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("POST /api/ai/preview-voice error:", error);
+
+    if (isFptAudioNotReadyError(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "FPT đang xử lý audio chậm hơn bình thường. Vui lòng thử lại sau vài giây để lấy preview voice.",
+          retryable: true,
+        },
+        { status: 504 }
+      );
+    }
+
     return NextResponse.json(
       { error: "Failed to generate voice preview" },
       { status: 500 }

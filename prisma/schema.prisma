@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
@@ -24,10 +25,17 @@ model VideoProject {
   userId         String            @db.Uuid @map("user_id")
   title          String            @db.VarChar(255)
   storyTopic     String?           @db.Text @map("story_topic")
+  characterDescription String?      @db.Text @map("character_description")
+  script         String?           @db.Text
+  contentTone    String?           @db.VarChar(100) @map("content_tone")
   videoGenre     String?           @db.VarChar(100) @map("video_genre")
   numberOfScenes Int?              @map("number_of_scenes")
   status         String?           @db.VarChar(20)
+  videoConfig    Json?             @map("video_config")
+  imageConfig    Json?             @map("image_config")
+  audioConfig    Json?             @map("audio_config")
   createdAt      DateTime          @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt      DateTime          @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
 
   user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   generations    VideoGeneration[]

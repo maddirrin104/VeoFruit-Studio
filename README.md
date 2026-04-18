@@ -16,10 +16,16 @@ npm install
 
 ## 3. Cau hinh bien moi truong
 
+Ban co 2 cach cau hinh:
+
+- Cach A (de phat trien): tao `.env`
+- Cach B (de dong goi va demo): nhap truc tiep trong man hinh `Settings API` cua app
+
 Tao file `.env` o thu muc goc du an voi noi dung:
 
 ```env
 DATABASE_URL="postgresql://postgres:your_password@localhost:5432/veofruit_studio?schema=public"
+GOOGLE_API_KEY="your_google_api_key_for_veo3_gemini"
 RUNWAYML_API_SECRET="your_runway_api_secret"
 FPT_AI_API_KEY="your_fpt_ai_api_key"
 FPT_AI_TTS_URL="https://api.fpt.ai/hmi/tts/v5"
@@ -41,10 +47,17 @@ Ban hay doi:
 - `your_password`: mat khau PostgreSQL
 - `localhost:5432`: host va port database
 - `veofruit_studio`: ten database
+- `your_google_api_key_for_veo3_gemini`: API key cho Gemini/Veo3
 - `your_runway_api_secret`: API Secret tu RunwayML
 - `your_fpt_ai_api_key`: API key tu FPT AI
 - Danh sach giong UI ho tro san: Ban Mai, Le Minh, Thu Minh, Minh Quang, My An, Linh San, Gia Huy, Lan Nhi, Ngoc Lam.
 - Neu nha cung cap doi ma voice, ban co the set bien `FPT_AI_VOICE_<TEN_GIONG>` tuong ung (vi du `FPT_AI_VOICE_BANMAI`).
+
+Neu ban dung man hinh `Settings API` trong app, cac gia tri se duoc luu vao:
+
+- `%USERPROFILE%/.veofruit-studio/runtime-settings.json`
+
+App desktop uu tien doc file settings nay, nen khong bat buoc sua `.env` tren may demo.
 
 ## 4. Tao database va ket noi Prisma
 
@@ -80,7 +93,7 @@ npm run dev
 
 Mo trinh duyet tai:
 
-- http://localhost:3000
+- http://localhost:3200
 
 ## 6. Kiem tra nhanh ket noi database
 
@@ -122,3 +135,32 @@ npx tsc --noEmit        # kiem tra TypeScript
 npx prisma migrate dev  # tao/ap migration local
 npx prisma studio       # xem data bang UI
 ```
+
+## 9. Dong goi thanh app desktop
+
+Du an nay co the chay nhu mot app desktop Windows bang Electron:
+
+```bash
+npm run desktop:dev
+```
+
+Khi can tao file cai dat Windows:
+
+```bash
+npm run desktop:build
+```
+
+Output se nam trong thu muc `dist-electron/` (file `.exe` NSIS installer).
+
+Quy trinh de nop cho Thay test:
+
+1. Chay `npm run desktop:dev`, vao man hinh `Settings API`, nhap:
+	- `DATABASE_URL`
+	- `Google API Key (Veo3/Gemini)`
+	- `Runway API Secret`
+	- `FPT AI API Key`
+2. Bam `Luu Settings`.
+3. Tat app, chay `npm run desktop:build` de tao installer.
+4. Gui file `.exe` trong `dist-electron/` cho Thay.
+
+Luu y: May test van can co PostgreSQL va database co the truy cap bang `DATABASE_URL` ban da cau hinh.

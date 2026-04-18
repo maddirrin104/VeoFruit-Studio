@@ -1,15 +1,8 @@
 import { promises as fs } from "node:fs";
-import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI, createPartFromBase64, createPartFromText } from "@google/genai";
-
-const apiKey = process.env.GOOGLE_API_KEY;
-
-if (!apiKey) {
-  throw new Error("GOOGLE_API_KEY environment variable is required");
-}
-
-const genAI = new GoogleGenAI({ apiKey, apiVersion: "v1" });
+import { getRuntimeSettings } from "@/lib/runtime-settings";
+import { resolvePublicPathFromRequestPath } from "@/lib/runtime-path";
 
 interface GenerateScriptRequest {
   topic: string;
@@ -23,12 +16,105 @@ interface GenerateScriptRequest {
   referenceImageUrl?: string;
   referenceImageName?: string;
   referenceImageSource?: "upload" | "url";
+  brandBackgroundImageUrl?: string;
+  brandBackgroundImageName?: string;
+  brandBackgroundImageSource?: "upload" | "url";
 }
 
 const TARGET_SCRIPT_CHARS = 1500;
 const MIN_SCRIPT_CHARS = 1200;
 const MAX_SCRIPT_CHARS = 1700;
 const GEMINI_MAX_RETRIES = 3;
+
+type FruitProfile = {
+  label: string;
+  sensory: string;
+  usage: string;
+  visualCue: string;
+};
+
+function buildFruitProfile(topic: string): FruitProfile {
+  const normalized = topic.toLowerCase();
+
+  if (normalized.includes("măng cụt") || normalized.includes("mang cut")) {
+    return {
+      label: "măng cụt",
+      sensory: "vỏ tím đẹp, múi trắng ngà, vị chua ngọt dịu và thơm nhẹ",
+      usage: "ăn trực tiếp, đãi khách, làm món tráng miệng hoặc mix khay trái cây",
+      visualCue: "lớp vỏ tím sẫm bóng nhẹ và múi trắng sạch sẽ khi bổ ra",
+    };
+  }
+
+  if (normalized.includes("sầu riêng") || normalized.includes("sau rieng")) {
+    return {
+      label: "sầu riêng",
+      sensory: "múi vàng béo, mùi thơm đặc trưng và độ dẻo mịn hấp dẫn",
+      usage: "ăn chín, làm kem, bánh, sinh tố hoặc món tráng miệng",
+      visualCue: "cơm sầu riêng vàng ươm, bóng mịn và dày múi",
+    };
+  }
+
+  if (normalized.includes("xoài") || normalized.includes("xoai")) {
+    return {
+      label: "xoài",
+      sensory: "vị ngọt thơm, thịt chắc mọng, vàng tươi bắt mắt",
+      usage: "ăn trực tiếp, ép nước, làm sinh tố, salad hoặc chấm muối",
+      visualCue: "da xoài vàng óng hoặc xanh vàng đều màu, cắt ra có thịt vàng tươi",
+    };
+  }
+
+  if (normalized.includes("bơ")) {
+    return {
+      label: "bơ",
+      sensory: "thịt bơ béo mịn, mềm dẻo và dễ ăn",
+      usage: "ăn với sữa, xay sinh tố, làm món healthy hoặc bữa phụ",
+      visualCue: "ruột bơ xanh vàng mướt và bề mặt cắt mịn, đều",
+    };
+  }
+
+  if (normalized.includes("thanh long") || normalized.includes("dragon fruit")) {
+    return {
+      label: "thanh long",
+      sensory: "ruột mọng nước, vị thanh mát, dễ ăn và tươi sáng trên hình",
+      usage: "ăn trực tiếp, ép nước, mix salad hoặc làm món mát lạnh",
+      visualCue: "vỏ thanh long nổi bật và ruột hồng/trắng nhiều hạt nhỏ đẹp mắt",
+    };
+  }
+
+  if (normalized.includes("chôm chôm") || normalized.includes("chom chom")) {
+    return {
+      label: "chôm chôm",
+      sensory: "vị ngọt giòn, mọng nước, ăn vui miệng",
+      usage: "ăn vặt, tráng miệng, đãi khách hoặc mix khay trái cây",
+      visualCue: "vỏ đỏ gai mềm bắt mắt và ruột trắng trong căng mọng",
+    };
+  }
+
+  if (normalized.includes("ổi") || normalized.includes("oi")) {
+    return {
+      label: "ổi",
+      sensory: "thơm nhẹ, giòn mát, vị thanh dễ ăn",
+      usage: "ăn trực tiếp, chấm muối ớt, làm gỏi hoặc ép nước",
+      visualCue: "mặt cắt giòn, ruột sáng màu và hạt rõ",
+    };
+  }
+
+  if (normalized.includes("nhãn") || normalized.includes("nhan")) {
+    return {
+      label: "nhãn",
+      sensory: "ngọt thơm, mọng nước và dễ ăn từng trái",
+      usage: "ăn vặt, làm chè, tráng miệng hoặc biếu tặng",
+      visualCue: "vỏ nâu sáng, cùi trong và hạt đen nhỏ nổi bật",
+    };
+  }
+
+  return {
+    label: topic,
+    sensory: "tươi ngon, nổi bật trên hình và dễ tạo cảm giác đáng mua",
+    usage: "ăn trực tiếp, làm sinh tố, tráng miệng hoặc dùng cho gia đình",
+    visualCue: "màu sắc tươi sáng và bề mặt trái đẹp mắt",
+  };
+}
 
 type GeminiGenerateContentArgs = {
   model: string;
@@ -46,6 +132,19 @@ type GeminiGenerateContentModel = {
 
 export async function POST(request: NextRequest) {
   try {
+    const runtime = await getRuntimeSettings();
+    if (!runtime.googleApiKey) {
+      return NextResponse.json(
+        {
+          error:
+            "GOOGLE_API_KEY chưa được cấu hình. Hãy mở phần Settings trong app để nhập API key Veo3/Gemini.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const genAI = new GoogleGenAI({ apiKey: runtime.googleApiKey, apiVersion: "v1" });
+
     const body = (await request.json()) as GenerateScriptRequest;
 
     const {
@@ -60,14 +159,21 @@ export async function POST(request: NextRequest) {
       referenceImageUrl,
       referenceImageName,
       referenceImageSource,
+      brandBackgroundImageUrl,
+      brandBackgroundImageName,
+      brandBackgroundImageSource,
     } = body;
 
     const resolvedCharacterDescription =
       characterDescription.trim() ||
       buildDefaultCharacterDescription(voiceType, characterType, sceneLocation);
 
-    const imagePart = referenceImageUrl
+    const productImagePart = referenceImageUrl
       ? await loadReferenceImagePart(request, referenceImageUrl)
+      : undefined;
+
+    const brandBackgroundImagePart = brandBackgroundImageUrl
+      ? await loadReferenceImagePart(request, brandBackgroundImageUrl)
       : undefined;
 
     const prompt = buildGeminiScriptPrompt({
@@ -81,7 +187,10 @@ export async function POST(request: NextRequest) {
       numberOfScenes,
       referenceImageName,
       referenceImageSource,
-      hasReferenceImage: Boolean(imagePart),
+      hasReferenceImage: Boolean(productImagePart),
+      brandBackgroundImageName,
+      brandBackgroundImageSource,
+      hasBrandBackgroundImage: Boolean(brandBackgroundImagePart),
     });
 
     const instructionBlock = [
@@ -95,13 +204,35 @@ export async function POST(request: NextRequest) {
 
     const model = genAI.models as unknown as GeminiGenerateContentModel;
 
-    const contents = imagePart
-      ? [{ role: "user", parts: [createPartFromText(`${instructionBlock}\n\n${prompt}`), imagePart] }]
+    const contents = productImagePart || brandBackgroundImagePart
+      ? [{
+          role: "user",
+          parts: [
+            createPartFromText(`${instructionBlock}\n\n${prompt}`),
+            ...(productImagePart
+              ? [
+                  createPartFromText(
+                    "Ảnh sản phẩm chính: hãy giữ đúng loại trái cây, màu sắc và độ tươi trong ảnh này."
+                  ),
+                  productImagePart,
+                ]
+              : []),
+            ...(brandBackgroundImagePart
+              ? [
+                  createPartFromText(
+                    "Ảnh brand/background: hãy giữ đúng mặt tiền, bảng hiệu, quầy và nhận diện cửa hàng trong ảnh này."
+                  ),
+                  brandBackgroundImagePart,
+                ]
+              : []),
+          ],
+        }]
       : `${instructionBlock}\n\n${prompt}`;
 
     const requestedScenes = Math.max(2, Math.min(6, numberOfScenes));
     let script = "";
     let warningMessage: string | undefined;
+    let scriptSource: "gemini" | "fallback" = "gemini";
 
     try {
       const result = await generateContentWithRetry(model, {
@@ -132,7 +263,10 @@ export async function POST(request: NextRequest) {
         characterType,
         numberOfScenes: requestedScenes,
       });
+      scriptSource = "fallback";
     }
+
+    script = normalizeSceneHeadings(script);
 
     if (countScenes(script) < requestedScenes || hasLikelyTruncatedEnding(script)) {
       const strictPrompt = [
@@ -164,7 +298,8 @@ export async function POST(request: NextRequest) {
 
         const retriedScript = retryResult.text?.trim();
         if (retriedScript) {
-          script = retriedScript;
+          script = normalizeSceneHeadings(retriedScript);
+          scriptSource = "gemini";
         }
       } catch (retryError) {
         if (!isTransientGeminiError(retryError)) {
@@ -185,6 +320,11 @@ export async function POST(request: NextRequest) {
         characterType,
         numberOfScenes: requestedScenes,
       });
+      scriptSource = "fallback";
+      if (!warningMessage) {
+        warningMessage =
+          "Gemini trả về định dạng kịch bản chưa đúng số cảnh yêu cầu, hệ thống đã chuyển sang kịch bản dự phòng để đảm bảo bạn vẫn dùng được ngay.";
+      }
     }
 
     script = ensureCompleteEnding(script);
@@ -196,6 +336,7 @@ export async function POST(request: NextRequest) {
         estimatedDuration: `${Math.min(numberOfScenes * 6, 72)} seconds`,
         sceneCount: numberOfScenes,
         warning: warningMessage,
+        source: scriptSource,
       },
     });
   } catch (error) {
@@ -282,10 +423,13 @@ async function loadReferenceImagePart(request: NextRequest, referenceImageUrl: s
 
   if (
     parsed.origin === new URL(request.url).origin ||
-    parsed.pathname.startsWith("/uploads/")
+    parsed.pathname.startsWith("/uploads/") ||
+    parsed.pathname.startsWith("/api/files/")
   ) {
-    const decodedPathname = decodeURIComponent(parsed.pathname);
-    const filePath = path.join(process.cwd(), "public", decodedPathname.replace(/^\//, ""));
+    const filePath = resolvePublicPathFromRequestPath(parsed.pathname);
+    if (!filePath) {
+      throw new Error("Invalid local reference image path");
+    }
     const fileBuffer = await fs.readFile(filePath);
     return createPartFromBase64(fileBuffer.toString("base64"), detectMimeType(filePath));
   }
@@ -330,6 +474,9 @@ function buildGeminiScriptPrompt(input: {
   referenceImageName?: string;
   referenceImageSource?: "upload" | "url";
   hasReferenceImage: boolean;
+  brandBackgroundImageName?: string;
+  brandBackgroundImageSource?: "upload" | "url";
+  hasBrandBackgroundImage: boolean;
 }): string {
   const sourceLabel =
     input.referenceImageSource === "upload"
@@ -338,13 +485,30 @@ function buildGeminiScriptPrompt(input: {
       ? "ảnh từ URL"
       : "ảnh tham chiếu";
 
+  const brandSourceLabel =
+    input.brandBackgroundImageSource === "upload"
+      ? "ảnh brand upload từ máy"
+      : input.brandBackgroundImageSource === "url"
+      ? "ảnh brand từ URL"
+      : "ảnh brand/background";
+
   const referenceBlock = input.hasReferenceImage
     ? [
-        `Ảnh tham chiếu: ${sourceLabel}.`,
+        `Ảnh sản phẩm: ${sourceLabel}.`,
         input.referenceImageName ? `Tên file: ${input.referenceImageName}.` : "",
-        "Hãy quan sát ảnh để nhận biết trái cây, màu sắc, độ tươi, kiểu bối cảnh và gợi ý nội dung phù hợp nhất với ảnh.",
-        "Nếu ảnh có trái cây cụ thể, ưu tiên đúng loại trái cây đó trong kịch bản.",
-        "Nếu ảnh chứa nhiều chi tiết, hãy chọn chi tiết chính làm trọng tâm quảng cáo/video.",
+        "Hãy quan sát ảnh để nhận biết đúng loại trái cây, màu sắc, độ tươi, texture và chi tiết sản phẩm chính.",
+        "Nếu ảnh có trái cây cụ thể, ưu tiên đúng loại trái cây đó trong kịch bản và không đổi sang loại khác.",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : "";
+
+  const brandReferenceBlock = input.hasBrandBackgroundImage
+    ? [
+        `Ảnh brand/background: ${brandSourceLabel}.`,
+        input.brandBackgroundImageName ? `Tên file: ${input.brandBackgroundImageName}.` : "",
+        "Hãy quan sát ảnh này để giữ đúng mặt tiền, bảng hiệu, quầy hàng, bố cục cửa hàng và nhận diện brand.",
+        "Nếu ảnh brand có không gian cửa hàng cụ thể, dùng nó làm nền chính của video.",
       ]
         .filter(Boolean)
         .join("\n")
@@ -353,6 +517,9 @@ function buildGeminiScriptPrompt(input: {
   return [
     "Bạn là biên kịch video ngắn chuyên nghiệp cho nội dung trái cây bán hàng.",
     "Mục tiêu chính là tạo kịch bản giúp người xem muốn mua, tin sản phẩm và hiểu nhanh điểm nổi bật của trái cây.",
+    `Phân tích trái cây chính: ${buildFruitProfile(input.topic).label} - ${buildFruitProfile(input.topic).sensory}.`,
+    `Gợi ý sử dụng: ${buildFruitProfile(input.topic).usage}.`,
+    `Chi tiết hình ảnh cần nhấn: ${buildFruitProfile(input.topic).visualCue}.`,
     `Chủ đề: ${input.topic}.`,
     `Nhân vật: ${input.characterType}.`,
     `Mô tả nhân vật: ${input.characterDescription}.`,
@@ -362,11 +529,13 @@ function buildGeminiScriptPrompt(input: {
     `Giới tính voiceover: ${input.voiceType}.`,
     `Số cảnh mong muốn: khoảng ${input.numberOfScenes} cảnh.`,
     referenceBlock,
+    brandReferenceBlock,
     "",
     "Yêu cầu đầu ra:",
     "- Viết bằng tiếng Việt tự nhiên, phù hợp video ngắn bán trái cây.",
     "- Ưu tiên kịch bản theo cấu trúc bán hàng: Hook mở đầu mạnh -> giới thiệu sản phẩm -> nêu lợi ích/điểm khác biệt -> chốt CTA.",
     "- Nhấn các yếu tố giúp bán hàng: độ tươi, màu sắc, độ mọng, độ ngọt, nguồn gốc, độ đẹp mắt khi lên hình, cảm giác đáng mua.",
+    "- Tránh lặp cùng một mô tả 'tươi ngon, mọng nước, bắt mắt' cho mọi cảnh; mỗi cảnh phải dùng một góc cảm quan khác nhau phù hợp với đúng loại trái cây.",
     "- Nếu ảnh tham chiếu là trái cây cụ thể, phải giữ đúng loại trái cây đó làm trung tâm nội dung.",
     "- Nếu phù hợp, thêm gợi ý cho người xem: mua để ăn ngay, biếu tặng, làm sinh tố, làm món tráng miệng hoặc dùng cho gia đình.",
     "- Không phóng đại quá mức hoặc hứa hẹn sai sự thật; ngôn ngữ nên thuyết phục nhưng vẫn tự nhiên.",
@@ -381,7 +550,9 @@ function buildGeminiScriptPrompt(input: {
     "  Lời thoại: [lời thoại tiếng Việt]",
     "- Toàn bộ đầu ra phải là tiếng Việt, bao gồm cả Cảnh quay và Lời thoại.",
     "- Mỗi cảnh nên ngắn, dễ đọc, dễ thu âm, nhịp nói tự nhiên.",
-    "- Nếu có ảnh tham chiếu, kịch bản phải bám theo ảnh và không đi lệch quá xa nội dung ảnh.",
+    input.hasReferenceImage && input.hasBrandBackgroundImage
+      ? "- Nếu có cả ảnh sản phẩm và ảnh brand/background, phải giữ đúng trái cây theo ảnh sản phẩm và giữ đúng bối cảnh/mặt tiền theo ảnh brand; kịch bản nên mô tả chúng xuất hiện cùng nhau một cách tự nhiên."
+      : "- Nếu có ảnh tham chiếu, kịch bản phải bám theo ảnh và không đi lệch quá xa nội dung ảnh.",
     "- Không viết phần giải thích, chỉ trả về kịch bản hoàn chỉnh.",
     "- Đảm bảo câu chữ phù hợp để dùng ngay cho tạo video.",
     `- Tổng độ dài toàn kịch bản khoảng ${TARGET_SCRIPT_CHARS} ký tự (dao động ${MIN_SCRIPT_CHARS}-${MAX_SCRIPT_CHARS} ký tự).`,
@@ -396,6 +567,11 @@ function buildDefaultCharacterDescription(
   characterType: string,
   sceneLocation: string
 ): string {
+  // Handle custom character type
+  if (characterType.includes("Khác") || characterType.includes("Tùy chọn")) {
+    return `Nhân vật giới thiệu tại ${sceneLocation}, phong cách tự nhiên, giao tiếp mạnh mẽ, diễn đạt mạch lạc và tập trung vào thông tin hữu ích cho người mua.`;
+  }
+
   if (characterType.includes("3D")) {
     return `Nhân vật 3D tại ${sceneLocation}, biểu cảm rõ ràng, lời dẫn ngắn gọn, nhịp nói linh hoạt và năng lượng tích cực.`;
   }
@@ -413,34 +589,48 @@ function buildDefaultCharacterDescription(
   }
 
   if (characterType.includes("Chủ shop")) {
-    return `Chủ shop trái cây tại ${sceneLocation}, phong cách thân thiện, hiểu rõ nguồn hàng theo ngày, tư vấn thẳng thắn về độ chín và cách chọn trái phù hợp nhu cầu.`;
+    return `Chủ shop trái cây tại ${sceneLocation}, phong cách thân thiện, hiểu rõ nguồn hàng theo ngày, tư vấn thẳng thắn về độ chín, cách chọn và bảo quản trái phù hợp nhu cầu khách hàng.`;
   }
 
   if (characterType.includes("nông trại") || characterType.includes("Nông trại")) {
-    return `Chủ nông trại tại ${sceneLocation}, am hiểu mùa vụ, chia sẻ chân thật quy trình chăm trái từ vườn đến tay khách, giọng nói gần gũi và đáng tin.`;
+    return `Chủ nông trại tại ${sceneLocation}, am hiểu mùa vụ, chia sẻ chân thật quy trình chăm trái từ vườn đến tay khách, giọng nói gần gũi, tự tin và đáng tin cậy.`;
   }
 
   if (characterType.includes("Nhân viên siêu thị")) {
-    return `Nhân viên quầy trái cây tại ${sceneLocation}, tác phong chỉn chu, hướng dẫn nhanh tiêu chí chọn trái tươi và gợi ý cách bảo quản tiện lợi sau khi mua.`;
+    return `Nhân viên quầy trái cây tại ${sceneLocation}, tác phong chỉn chu, hướng dẫn nhanh tiêu chí chọn trái tươi, gợi ý cách bảo quản tiện lợi sau khi mua.`;
   }
 
   if (characterType.includes("MC")) {
-    return `MC tại ${sceneLocation}, giọng nói rõ ràng, chuyên nghiệp, truyền tải thông tin mạch lạc và dễ theo dõi.`;
+    return `MC tại ${sceneLocation}, giọng nói rõ ràng, chuyên nghiệp, truyền tải thông tin mạch lạc, dễ theo dõi và thu hút người nghe.`;
+  }
+
+  if (characterType.includes("cửa hàng") || sceneLocation.includes("cửa hàng") || sceneLocation.includes("Cửa hàng")) {
+    if (characterType.includes("Nữ") || voiceType === "Nữ") {
+      return `Nữ tư vấn viên cửa hàng trái cây tại ${sceneLocation}, tác phong chuyên nghiệp, giao tiếp thân thiện, am hiểu sản phẩm từng loại trái, tư vấn hợp lý về chất lượng, độ chín, giá cả và cách bảo quản.`;
+    }
+    return `Nam tư vấn viên cửa hàng trái cây tại ${sceneLocation}, phong thái điềm tĩnh, tư vấn rõ ràng, không khuyên nhưỡng, nhấn mạnh độ tươi, hương vị, upsize giá trị và cách bảo quản đúng cách.`;
   }
 
   if (characterType.includes("Nữ") || voiceType === "Nữ") {
-    return `Nữ tư vấn viên tại ${sceneLocation}, tác phong chuyên nghiệp, giao tiếp thân thiện, giới thiệu điểm nổi bật của từng loại trái cây.`;
+    return `Nữ tư vấn viên tại ${sceneLocation}, tác phong chuyên nghiệp, giao tiếp thân thiện, giới thiệu điểm nổi bật của từng loại trái cây, tư vấn chân thành.`;
   }
 
   if (characterType.includes("Nam") || voiceType === "Nam") {
-    return `Nam tư vấn viên tại ${sceneLocation}, phong thái điềm tĩnh, tư vấn rõ ràng, nhấn mạnh độ tươi, hương vị và cách bảo quản.`;
+    return `Nam tư vấn viên tại ${sceneLocation}, phong thái điềm tĩnh, tư vấn rõ ràng, nhấn mạnh độ tươi, hương vị, chất lượng và cách bảo quản.`;
   }
 
   return `Nhân vật giới thiệu tại ${sceneLocation}, phong cách gần gũi, diễn đạt mạch lạc và tập trung vào thông tin hữu ích cho người mua.`;
 }
 
 function countScenes(script: string): number {
-  return (script.match(/(^|\n)\s*SCENE\s+\d+/gi) || []).length;
+  return (script.match(/(^|\n)\s*(?:SCENE|CẢNH|CANH)\s+\d+/gi) || []).length;
+}
+
+function normalizeSceneHeadings(script: string): string {
+  return script.replace(
+    /(^|\n)\s*(?:SCENE|CẢNH|CANH)\s*[:#-]?\s*(\d+)\b/gi,
+    (_match, prefix: string, sceneNo: string) => `${prefix}SCENE ${sceneNo}`
+  );
 }
 
 function hasLikelyTruncatedEnding(text: string): boolean {
@@ -507,6 +697,7 @@ function buildDeterministicSceneFallback(input: {
   characterType: string;
   numberOfScenes: number;
 }): string {
+  const fruitProfile = buildFruitProfile(input.topic);
   const scenes: string[] = [];
 
   for (let index = 1; index <= input.numberOfScenes; index += 1) {
@@ -517,14 +708,14 @@ function buildDeterministicSceneFallback(input: {
     let voiceover = "";
 
     if (isFirst) {
-      visualPrompt = `Toàn cảnh ${input.sceneLocation}, quầy trái cây rực rỡ ánh sáng, máy quay tiến gần đến ${input.characterType} đang cầm ${input.topic} tươi ngon.`;
-      voiceover = `Xin chào bạn, hôm nay tại ${input.sceneLocation}, chúng tôi giới thiệu ${input.topic} tươi ngon, mọng nước và cực kỳ bắt mắt. Nếu bạn đang tìm loại trái cây dễ ăn, dễ dùng cho gia đình thì đây là lựa chọn rất đáng thử.`;
+      visualPrompt = `Toàn cảnh ${input.sceneLocation}, quầy trái cây rực rỡ ánh sáng, máy quay tiến gần đến ${input.characterType} đang cầm ${fruitProfile.label} với ${fruitProfile.visualCue}.`;
+      voiceover = `Xin chào bạn, hôm nay tại ${input.sceneLocation}, chúng tôi giới thiệu ${fruitProfile.label} với ${fruitProfile.sensory}. Nếu bạn đang tìm loại trái cây dễ ăn, dễ dùng cho gia đình thì đây là lựa chọn rất đáng thử.`;
     } else if (isLast) {
-      visualPrompt = `Cận cảnh ${input.topic} được đóng gói sạch đẹp tại ${input.sceneLocation}, nhân vật mỉm cười chào và chỉ vào quầy hàng.`;
-      voiceover = `${input.topic} hiện có sẵn tại ${input.sceneLocation} với chất lượng tuyển chọn mỗi ngày. Ghé cửa hàng để được tư vấn loại phù hợp nhu cầu và chọn ngay những phần trái cây tươi ngon nhất.`;
+      visualPrompt = `Cận cảnh ${fruitProfile.label} được đóng gói sạch đẹp tại ${input.sceneLocation}, nhân vật mỉm cười chào và chỉ vào quầy hàng.`;
+      voiceover = `${fruitProfile.label} hiện có sẵn tại ${input.sceneLocation} với chất lượng tuyển chọn mỗi ngày. Ghé cửa hàng để được tư vấn loại phù hợp nhu cầu và chọn ngay những phần trái cây ngon, đẹp mắt và đáng mua nhất.`;
     } else {
-      visualPrompt = `Các góc quay cận cảnh ${input.topic}: màu sắc, độ căng mọng và độ tươi; xen kẽ cảnh ${input.characterType} tư vấn trực tiếp tại quầy.`;
-      voiceover = `${input.topic} có vị ngon tự nhiên, dễ dùng để ăn trực tiếp, làm sinh tố hoặc chuẩn bị món tráng miệng cho cả nhà. Chúng tôi ưu tiên chọn trái đều màu, tươi mới để bạn yên tâm khi mua và sử dụng.`;
+      visualPrompt = `Các góc quay cận cảnh ${fruitProfile.label}: màu sắc, độ căng mọng, ${fruitProfile.visualCue}; xen kẽ cảnh ${input.characterType} tư vấn trực tiếp tại quầy.`;
+      voiceover = `${fruitProfile.label} có ${fruitProfile.sensory}, rất phù hợp để ${fruitProfile.usage}. Chúng tôi ưu tiên chọn trái đều màu, tươi mới để bạn yên tâm khi mua và sử dụng.`;
     }
 
     scenes.push(

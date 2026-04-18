@@ -5,6 +5,10 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import ffmpegPath from "ffmpeg-static";
 import { prisma } from "@/lib/prisma";
+import {
+  getAppRoot,
+  resolvePublicPathFromRequestPath,
+} from "@/lib/runtime-path";
 
 type GenerationDownloadRecord = {
   id: string;
@@ -52,12 +56,26 @@ async function buildVideoDownloadResponse(
 
 async function materializeAudioInput(audioUrl: string, audioInputPath: string): Promise<void> {
   if (audioUrl.startsWith("/")) {
-    const localPath = path.join(process.cwd(), "public", audioUrl.replace(/^\//, ""));
-    await fs.copyFile(localPath, audioInputPath);
-    return;
+    const localPath = resolvePublicPathFromRequestPath(audioUrl);
+    if (localPath) {
+      await fs.copyFile(localPath, audioInputPath);
+      return;
+    }
   }
 
   await downloadToFile(audioUrl, audioInputPath);
+}
+
+async function materializeVideoInput(videoUrl: string, videoInputPath: string): Promise<void> {
+  if (videoUrl.startsWith("/")) {
+    const localPath = resolvePublicPathFromRequestPath(videoUrl);
+    if (localPath) {
+      await fs.copyFile(localPath, videoInputPath);
+      return;
+    }
+  }
+
+  await downloadToFile(videoUrl, videoInputPath);
 }
 
 function normalizeRootAliasPath(inputPath: string): string {
@@ -67,7 +85,7 @@ function normalizeRootAliasPath(inputPath: string): string {
 
   // Next server runtime may return paths like /ROOT/node_modules/... from bundled modules.
   if (/^[\\/]+ROOT[\\/]/i.test(inputPath)) {
-    return path.join(process.cwd(), inputPath.replace(/^[\\/]+ROOT[\\/]?/i, ""));
+    return path.join(getAppRoot(), inputPath.replace(/^[\\/]+ROOT[\\/]?/i, ""));
   }
 
   return inputPath;
@@ -91,7 +109,7 @@ async function resolveFfmpegBinary(): Promise<string> {
   }
 
   const platformBinary = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
-  candidates.push(path.join(process.cwd(), "node_modules", "ffmpeg-static", platformBinary));
+  candidates.push(path.join(getAppRoot(), "node_modules", "ffmpeg-static", platformBinary));
 
   for (const candidate of candidates) {
     if (!candidate) {
@@ -189,7 +207,7 @@ export async function GET(
     const audioInputPath = path.join(tempDir, "audio-input.mp3");
     const outputPath = path.join(tempDir, "video-with-audio.mp4");
 
-    await downloadToFile(generation.outputUrl, videoInputPath);
+    await materializeVideoInput(generation.outputUrl, videoInputPath);
 
     const audioUrl = extractAudioUrl(generation.voiceSettings);
     if (!audioUrl) {

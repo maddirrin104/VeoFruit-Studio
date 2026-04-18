@@ -1,15 +1,4 @@
-const apiKey = process.env.RUNWAYML_API_SECRET;
-
-if (!apiKey) {
-  throw new Error(
-    "RUNWAYML_API_SECRET environment variable is required"
-  );
-}
-
-const RUNWAY_API_BASE_URL =
-  process.env.RUNWAY_API_BASE_URL?.trim() || "https://api.dev.runwayml.com";
-const RUNWAY_API_VERSION =
-  process.env.RUNWAY_API_VERSION?.trim() || "2024-11-06";
+import { getRuntimeSettings } from "@/lib/runtime-settings";
 
 export class RunwayGenerationError extends Error {
   code: "TASK_FAILED" | "TASK_TIMEOUT" | "API_ERROR";
@@ -216,12 +205,21 @@ async function runwayApiRequest<T>(
   endpoint: string,
   init: RequestInit
 ): Promise<T> {
-  const response = await fetch(`${RUNWAY_API_BASE_URL}${endpoint}`, {
+  const settings = await getRuntimeSettings();
+  if (!settings.runwayApiSecret) {
+    throw new RunwayGenerationError(
+      "RUNWAYML_API_SECRET chưa được cấu hình. Hãy mở phần Settings trong app để nhập khóa API trước khi tạo video.",
+      "API_ERROR",
+      false
+    );
+  }
+
+  const response = await fetch(`${settings.runwayApiBaseUrl}${endpoint}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${settings.runwayApiSecret}`,
       "Content-Type": "application/json",
-      "X-Runway-Version": RUNWAY_API_VERSION,
+      "X-Runway-Version": settings.runwayApiVersion,
       ...(init.headers ?? {}),
     },
   });
@@ -325,6 +323,12 @@ function extractVideoUrl(output: unknown): string | undefined {
 async function waitForRunwayTaskOutput(taskId: string, timeoutMs: number): Promise<RunwayTaskResponse> {
   const startTime = Date.now();
 
+  
+  // Adaptive polling: start with 2s checks, then slow down to 5s after 30 seconds
+  // This reduces API calls by ~60% while maintaining responsiveness for quick completions
+  let pollIntervalMs = 2000;
+  const slowdownThresholdMs = 30 * 1000; // Switch to slower polling after 30s
+
   while (Date.now() - startTime < timeoutMs) {
     const task = await runwayApiRequest<RunwayTaskResponse>(`/v1/tasks/${taskId}`, {
       method: "GET",
@@ -345,7 +349,12 @@ async function waitForRunwayTaskOutput(taskId: string, timeoutMs: number): Promi
       );
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Adaptive polling: slow down after 30 seconds to reduce API load
+    if (Date.now() - startTime > slowdownThresholdMs) {
+      pollIntervalMs = 5000; // 5 seconds after 30s elapsed
+    }
+    
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
 
   throw new RunwayGenerationError(

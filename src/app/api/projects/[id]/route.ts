@@ -1,7 +1,48 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { UpdateProjectRequest } from "@/types/studio";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma";
+
+function mapServerErrorToMessage(error: unknown): { message: string; status: number } {
+  const message = (error as Error)?.message || "Unexpected server error";
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("environment variable not found: database_url")) {
+    return {
+      message:
+        "DATABASE_URL chưa được cấu hình cho app desktop. Hãy vào Settings API, nhập DATABASE_URL rồi bấm Lưu Settings, sau đó mở lại app.",
+      status: 400,
+    };
+  }
+
+  if (
+    normalized.includes("relation") &&
+    (normalized.includes("does not exist") || normalized.includes("doesn't exist"))
+  ) {
+    return {
+      message:
+        "Database chưa có đủ bảng. Hãy chạy file database_setup.sql vào đúng database đang dùng trong DATABASE_URL.",
+      status: 400,
+    };
+  }
+
+  if (
+    normalized.includes("econnrefused") ||
+    normalized.includes("can't reach database server") ||
+    normalized.includes("could not connect")
+  ) {
+    return {
+      message:
+        "Không kết nối được PostgreSQL. Hãy kiểm tra container/database đang chạy và DATABASE_URL trỏ đúng host:port.",
+      status: 400,
+    };
+  }
+
+  return {
+    message: "Failed to update project",
+    status: 500,
+  };
+}
 
 export async function GET(
   request: NextRequest,
@@ -26,9 +67,9 @@ export async function GET(
     return NextResponse.json({
       data: {
         ...project,
-        videoConfig: null,
-        imageConfig: null,
-        audioConfig: null,
+        videoConfig: project.videoConfig,
+        imageConfig: project.imageConfig,
+        audioConfig: project.audioConfig,
       },
     });
   } catch (error) {
@@ -61,8 +102,20 @@ export async function PATCH(
     const updateData: Prisma.VideoProjectUpdateInput = {
       title: body.title ?? existingProject?.title,
       storyTopic: body.storyTopic ?? existingProject?.storyTopic,
+      characterDescription: body.characterDescription ?? existingProject?.characterDescription,
+      script: body.script ?? existingProject?.script,
+      contentTone: body.contentTone ?? existingProject?.contentTone,
       videoGenre: body.videoGenre ?? existingProject?.videoGenre,
       numberOfScenes: body.numberOfScenes ?? existingProject?.numberOfScenes,
+      videoConfig: body.videoConfig
+        ? (body.videoConfig as Prisma.InputJsonValue)
+        : existingProject?.videoConfig ?? Prisma.JsonNull,
+      imageConfig: body.imageConfig
+        ? (body.imageConfig as Prisma.InputJsonValue)
+        : existingProject?.imageConfig ?? Prisma.JsonNull,
+      audioConfig: body.audioConfig
+        ? (body.audioConfig as Prisma.InputJsonValue)
+        : existingProject?.audioConfig ?? Prisma.JsonNull,
     };
 
     const updatedProject = await prisma.videoProject.update({
@@ -84,10 +137,8 @@ export async function PATCH(
     );
   } catch (error) {
     console.error("PATCH /api/projects/[id] error:", error);
-    return NextResponse.json(
-      { error: "Failed to update project" },
-      { status: 500 }
-    );
+    const mapped = mapServerErrorToMessage(error);
+    return NextResponse.json({ error: mapped.message }, { status: mapped.status });
   }
 }
 
@@ -117,7 +168,7 @@ export async function DELETE(
     });
 
     return NextResponse.json(
-      { message: "Project deleted successfully" },
+      { data: { id: projectId, deleted: true }, message: "Project deleted successfully" },
       { status: 200 }
     );
   } catch (error) {

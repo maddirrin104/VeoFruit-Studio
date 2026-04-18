@@ -11,6 +11,9 @@ const eslintConfig = defineConfig([
     ".next/**",
     "out/**",
     "build/**",
+    "dist-electron/**",
+    "electron/**",
+    "src/generated/prisma/**",
     "next-env.d.ts",
   ]),
 ]);

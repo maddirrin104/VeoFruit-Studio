@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   buildAudioFileName,
   generateVoiceOverWithFpt,
+  isFptAudioNotReadyError,
   isFptConfigured,
   type VoiceType,
 } from "@/lib/fpt-tts";
@@ -15,6 +16,8 @@ import {
   mixBackgroundMusic,
   optimizeVoiceOverAudio,
 } from "@/lib/audio-postprocess";
+import { buildFilesApiPath, getPublicPath } from "@/lib/runtime-path";
+import { ensurePlayableMp3Buffer } from "@/lib/audio-validation";
 
 interface GenerateAudioRequest {
   script?: string;
@@ -41,18 +44,18 @@ interface AudioGenerationResult {
   estimatedDurationSeconds: number;
 }
 
-const AUDIO_OUTPUT_DIR = path.join(process.cwd(), "public", "generated-audio");
+const AUDIO_OUTPUT_DIR = getPublicPath("generated-audio");
 
 async function persistAudio(buffer: Buffer, fileName: string): Promise<string> {
   await fs.mkdir(AUDIO_OUTPUT_DIR, { recursive: true });
   const filePath = path.join(AUDIO_OUTPUT_DIR, fileName);
   await fs.writeFile(filePath, buffer);
-  return `/generated-audio/${fileName}`;
+  return buildFilesApiPath("generated-audio", fileName);
 }
 
 export async function POST(request: NextRequest) {
   try {
-    if (!isFptConfigured()) {
+    if (!(await isFptConfigured())) {
       return NextResponse.json(
         { error: "FPT_AI_API_KEY is not configured" },
         { status: 400 }
@@ -88,23 +91,45 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    const validatedRawVoice = await ensurePlayableMp3Buffer(
+      buffer,
+      "FPT voice-over"
+    );
+
     const optimizedVoice = await optimizeVoiceOverAudio({
-      inputBuffer: buffer,
+      inputBuffer: validatedRawVoice.buffer,
       targetDurationSeconds: body.durationSeconds,
       inputExtension: "mp3",
     });
 
+    let stableVoice = await ensurePlayableMp3Buffer(
+      optimizedVoice.buffer,
+      "Optimized voice-over"
+    ).catch((validationError) => {
+      console.warn("[generate-audio] Optimized voice invalid, fallback to raw buffer:", validationError);
+      return validatedRawVoice;
+    });
+
     const withBgMusic = body.audioConfig.bgMusicEnabled
       ? await mixBackgroundMusic({
-          voiceBuffer: optimizedVoice.buffer,
-          voiceDurationSeconds: optimizedVoice.durationAfterSeconds,
+          voiceBuffer: stableVoice.buffer,
+          voiceDurationSeconds:
+            optimizedVoice.durationAfterSeconds ?? stableVoice.durationSeconds,
           outputExtension: "mp3",
         })
-      : { buffer: optimizedVoice.buffer, mixed: false as const };
+      : { buffer: stableVoice.buffer, mixed: false as const };
+
+    stableVoice = await ensurePlayableMp3Buffer(
+      withBgMusic.buffer,
+      "Final mixed voice-over"
+    ).catch((validationError) => {
+      console.warn("[generate-audio] Mixed voice invalid, fallback to previous playable buffer:", validationError);
+      return stableVoice;
+    });
 
     const outputExt = body.audioConfig.outputFormat === "wav" ? "mp3" : body.audioConfig.outputFormat;
     const fileName = buildAudioFileName("voiceover", outputExt);
-    const audioUrl = await persistAudio(withBgMusic.buffer, fileName);
+    const audioUrl = await persistAudio(stableVoice.buffer, fileName);
     const narrationWords = narrationText.split(" ").filter(Boolean).length;
     const estimatedDurationSeconds = estimateNarrationDurationSeconds(
       narrationText,
@@ -122,6 +147,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ data });
   } catch (error) {
     console.error("POST /api/ai/generate-audio error:", error);
+
+    if (isFptAudioNotReadyError(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "FPT đang xử lý audio chậm hơn bình thường. Vui lòng thử lại sau vài giây để tạo voice-over.",
+          retryable: true,
+        },
+        { status: 504 }
+      );
+    }
+
     return NextResponse.json(
       { error: "Failed to generate voice-over audio" },
       { status: 500 }

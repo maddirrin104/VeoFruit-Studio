@@ -42,6 +42,7 @@ const characterTypeOptions = [
   "MC giới thiệu sản phẩm tại quầy",
   "Nhân vật 3D hoạt hình",
   "Sinh viên làm vlog ẩm thực",
+  "Khác (Tùy chọn)",
 ] as const;
 
 const sceneLocationOptions = [

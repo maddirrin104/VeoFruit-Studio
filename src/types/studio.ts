@@ -29,6 +29,12 @@ export interface ImageConfigInput {
   referenceImageUrl?: string;
   referenceImageName?: string;
   referenceImageSource?: "upload" | "url";
+  productReferenceImageUrl?: string;
+  productReferenceImageName?: string;
+  productReferenceImageSource?: "upload" | "url";
+  brandBackgroundImageUrl?: string;
+  brandBackgroundImageName?: string;
+  brandBackgroundImageSource?: "upload" | "url";
 }
 
 export interface AudioConfigInput {
@@ -49,13 +55,12 @@ export interface CreateProjectRequest {
   contentTone?: string;
   videoGenre?: string;
   numberOfScenes?: number;
-}
-
-export interface UpdateProjectRequest extends CreateProjectRequest {
   videoConfig?: Partial<VideoConfigInput>;
   imageConfig?: Partial<ImageConfigInput>;
   audioConfig?: Partial<AudioConfigInput>;
 }
+
+export type UpdateProjectRequest = CreateProjectRequest;
 
 export interface CreateGenerationRequest {
   projectId: string;
@@ -94,6 +99,10 @@ export interface ProjectDto {
   contentTone?: string;
   videoGenre?: string;
   numberOfScenes?: number;
+  status?: string;
+  videoConfig?: Partial<VideoConfigInput> | null;
+  imageConfig?: Partial<ImageConfigInput> | null;
+  audioConfig?: Partial<AudioConfigInput> | null;
   createdAt: string;
   updatedAt: string;
 }
