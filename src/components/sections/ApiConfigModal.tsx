@@ -93,6 +93,20 @@ function TextField({
   );
 }
 
+const API_USAGE: Record<WorkflowMode, { google: boolean; runway: boolean; fpt: boolean; kling: boolean }> = {
+  "runway-manual":    { google: false, runway: true,  fpt: true, kling: false },
+  "runway-ai-script": { google: true,  runway: true,  fpt: true, kling: false },
+  "veo3-direct":      { google: true,  runway: false, fpt: true, kling: false },
+  "kling-ai-script":  { google: true,  runway: false, fpt: true, kling: true  },
+};
+
+const MODE_LABELS: Record<WorkflowMode, string> = {
+  "runway-manual":    "Mode 1 (Runway Manual)",
+  "runway-ai-script": "Mode 2 (Runway AI)",
+  "veo3-direct":      "Mode 3 (Veo3)",
+  "kling-ai-script":  "Mode 4 (Kling AI)",
+};
+
 export function ApiConfigModal({
   settings,
   isLoading,
@@ -104,7 +118,8 @@ export function ApiConfigModal({
   onClose,
 }: ApiConfigModalProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const isKlingMode = workflowMode === "kling-ai-script";
+  const usage = API_USAGE[workflowMode];
+  const modeLabel = MODE_LABELS[workflowMode];
 
   const handleSave = () => {
     onSave();
@@ -148,10 +163,16 @@ export function ApiConfigModal({
             <p className="py-8 text-center text-sm text-[#5a8a72]">Đang tải cấu hình...</p>
           ) : (
             <div className="space-y-4">
+              <p className="rounded-lg bg-[#eaf7f0] px-3 py-2 text-xs text-[#2a7a52]">
+                Đang dùng <span className="font-semibold">{modeLabel}</span> — chỉ các API được sử dụng trong mode này mới có thể chỉnh sửa.
+              </p>
+
               <PasswordField
                 label="Google Gemini API Key"
                 value={settings.googleApiKey || ""}
                 placeholder="Nhập mã API từ Google AI Studio..."
+                disabled={!usage.google}
+                disabledNote={`Không dùng trong ${modeLabel}`}
                 onChange={(v) => onChange({ googleApiKey: v })}
               />
 
@@ -159,6 +180,8 @@ export function ApiConfigModal({
                 label="RunwayML API Key"
                 value={settings.runwayApiSecret || ""}
                 placeholder="rw_..."
+                disabled={!usage.runway}
+                disabledNote={`Không dùng trong ${modeLabel}`}
                 onChange={(v) => onChange({ runwayApiSecret: v })}
               />
 
@@ -171,9 +194,9 @@ export function ApiConfigModal({
 
               <div className="rounded-xl border border-[#d0eadc] bg-[#f7fdf9] p-4 space-y-4">
                 <div className="flex items-center gap-2">
-                  <span className={`h-2 w-2 rounded-full ${isKlingMode ? "bg-[#10b862]" : "bg-[#c5d8cf]"}`} />
+                  <span className={`h-2 w-2 rounded-full ${usage.kling ? "bg-[#10b862]" : "bg-[#c5d8cf]"}`} />
                   <p className="text-xs font-semibold uppercase tracking-wide text-[#3a7058]">
-                    Kling AI {!isKlingMode && <span className="font-normal text-[#9bbdae]">— chỉ cần khi chọn Mode Kling</span>}
+                    Kling AI {!usage.kling && <span className="font-normal text-[#9bbdae]">— chỉ cần khi chọn Mode 4 (Kling)</span>}
                   </p>
                 </div>
 
@@ -181,8 +204,8 @@ export function ApiConfigModal({
                   label="Kling AI Access Key"
                   value={settings.klingAccessKeyId || ""}
                   placeholder="Nhập Access Key từ Kling AI..."
-                  disabled={!isKlingMode}
-                  disabledNote="Chỉ cần khi chọn Mode 4 (Kling AI)"
+                  disabled={!usage.kling}
+                  disabledNote={`Không dùng trong ${modeLabel}`}
                   onChange={(v) => onChange({ klingAccessKeyId: v })}
                 />
 
@@ -190,7 +213,7 @@ export function ApiConfigModal({
                   label="Kling AI Secret Key"
                   value={settings.klingAccessKeySecret || ""}
                   placeholder="Nhập Secret Key từ Kling AI..."
-                  disabled={!isKlingMode}
+                  disabled={!usage.kling}
                   disabledNote="Lấy tại console.klingai.com"
                   onChange={(v) => onChange({ klingAccessKeySecret: v })}
                 />

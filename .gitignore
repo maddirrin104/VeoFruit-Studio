@@ -47,3 +47,6 @@ next-env.d.ts
 /public/uploads/
 /public/generated-audio/
 
+# Claude Code local settings (machine-specific, not for source control)
+.claude/
+

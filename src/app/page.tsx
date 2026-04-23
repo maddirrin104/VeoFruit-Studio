@@ -1119,17 +1119,14 @@ export default function HomePage() {
     }
   }, []);
 
-  const handleRenameDraft = useCallback(async (draftId: string) => {
-    const targetDraft = drafts.find((draft) => draft.id === draftId);
-    const nextTitle = window.prompt("Nhập tên mới cho nháp:", targetDraft?.title ?? form.title);
-
-    if (!nextTitle) {
+  const handleRenameDraft = useCallback(async (draftId: string, newTitle: string) => {
+    if (!newTitle.trim()) {
       return;
     }
 
     try {
       const renamed = await updateProject(draftId, {
-        title: nextTitle,
+        title: newTitle.trim(),
       });
 
       await refreshDrafts(projectId);
