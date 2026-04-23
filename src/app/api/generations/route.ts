@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { prisma } from "@/lib/prisma";
-import { buildVideoPrompt } from "@/lib/veo3";
+import { buildVideoPrompt, generateVideoWithVeo3 } from "@/lib/veo3";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { Prisma } from "@/generated/prisma";
@@ -10,6 +10,12 @@ import {
   generateVideoWithRunway,
   mapAspectRatioToRunwayRatio,
 } from "@/lib/runway";
+import {
+  KlingGenerationError,
+  generateTextToVideoWithKling,
+  generateImageToVideoWithKling,
+  mapAspectRatioForKling,
+} from "@/lib/kling";
 import {
   buildFptVoiceDiagnosticConfig,
   buildAudioFileName,
@@ -25,10 +31,12 @@ import {
   mixBackgroundMusic,
   optimizeVoiceOverAudio,
 } from "@/lib/audio-postprocess";
-import { buildFilesApiPath, getPublicPath } from "@/lib/runtime-path";
+import { buildFilesApiPath, getRuntimeMediaPath } from "@/lib/runtime-path";
 import { ensurePlayableMp3Buffer } from "@/lib/audio-validation";
-import { CreateGenerationRequest } from "@/types/studio";
+import { CreateGenerationRequest, WorkflowMode } from "@/types/studio";
 import { downloadAndSaveVideo } from "@/lib/video-storage";
+import { parseScriptIntoScenes, buildSceneSlotsForClips } from "@/lib/scene-parser";
+import { concatenateVideoFiles } from "@/lib/video-concat";
 
 type VideoProjectRecord = NonNullable<
   Awaited<ReturnType<typeof prisma.videoProject.findUnique>>
@@ -178,7 +186,7 @@ function getAudioUrlFromVoiceSettings(voiceSettings: Prisma.JsonValue | null): s
   return typeof audioUrl === "string" ? audioUrl : undefined;
 }
 
-const AUDIO_OUTPUT_DIR = getPublicPath("generated-audio");
+const AUDIO_OUTPUT_DIR = getRuntimeMediaPath("generated-audio");
 
 async function persistAudio(buffer: Buffer, fileName: string): Promise<string> {
   await fs.mkdir(AUDIO_OUTPUT_DIR, { recursive: true });
@@ -191,7 +199,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as CreateGenerationRequest;
 
-    const { projectId, videoConfig, imageConfig, audioConfig } = body;
+    const { projectId, videoConfig, imageConfig, audioConfig, workflowMode } = body;
     const promptContext: PromptContext = {
       storyTopic: body.storyTopic,
       script: body.script,
@@ -250,7 +258,8 @@ export async function POST(request: NextRequest) {
       videoConfig,
       imageConfig,
       audioConfig,
-      promptContext
+      promptContext,
+      workflowMode
     ).catch((error) => {
       console.error(
         `[Generation ${generation.id}] Background generation job crashed unexpectedly:`,
@@ -473,6 +482,69 @@ async function generateAudioForGeneration({
   }
 }
 
+const CLIP_TEMP_DIR = getRuntimeMediaPath("concat-temp");
+const VIDEO_OUTPUT_DIR = getRuntimeMediaPath("uploads", "videos");
+
+async function downloadClipFile(videoUrl: string, clipId: string): Promise<string> {
+  await fs.mkdir(CLIP_TEMP_DIR, { recursive: true });
+  const filePath = path.join(CLIP_TEMP_DIR, `${clipId}.mp4`);
+  const response = await fetch(videoUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download clip ${clipId}: ${response.status} ${response.statusText}`);
+  }
+  const buffer = await response.arrayBuffer();
+  await fs.writeFile(filePath, Buffer.from(buffer));
+  return filePath;
+}
+
+async function generateSingleClip(
+  generationId: string,
+  prompt: string,
+  aiProvider: string,
+  videoConfig: CreateGenerationRequest["videoConfig"],
+  promptImageUrl: string | undefined,
+): Promise<string> {
+  if (aiProvider === "veo3") {
+    const veo3Result = await generateVideoWithVeo3(prompt, Math.min(videoConfig.durationSeconds, 30));
+    console.log(`[Generation ${generationId}] ✅ Veo3 clip ready: ${veo3Result.operationId}`);
+    return veo3Result.videoUrl;
+  }
+
+  if (aiProvider === "kling") {
+    const klingResult = promptImageUrl
+      ? await generateImageToVideoWithKling({
+          imageUrl: promptImageUrl,
+          prompt,
+          negativePrompt: "",
+          duration: videoConfig.durationSeconds <= 5 ? "5" : "10",
+          aspectRatio: mapAspectRatioForKling(videoConfig.aspectRatio),
+          mode: "pro",
+          sound: "on",
+        })
+      : await generateTextToVideoWithKling({
+          prompt,
+          negativePrompt: "",
+          duration: videoConfig.durationSeconds <= 5 ? "5" : "10",
+          aspectRatio: mapAspectRatioForKling(videoConfig.aspectRatio),
+          mode: "pro",
+          sound: "on",
+        });
+    console.log(`[Generation ${generationId}] ✅ Kling clip ready: ${klingResult.taskId}`);
+    return klingResult.videoUrl ?? "";
+  }
+
+  // Runway
+  const runwayResult = await generateVideoWithRunway({
+    prompt,
+    model: "gen4.5",
+    ratio: mapAspectRatioToRunwayRatio(videoConfig.aspectRatio),
+    durationSeconds: Math.min(videoConfig.durationSeconds, 10),
+    promptImageUrl,
+  });
+  console.log(`[Generation ${generationId}] ✅ Runway clip ready`);
+  return runwayResult.videoUrl;
+}
+
 /**
  * Run video generation in background (non-blocking)
  */
@@ -491,10 +563,10 @@ async function generateVideoInBackground(
     videoGenre?: string;
     sceneLocation?: string;
     numberOfScenes?: number;
-  }
+  },
+  workflowMode?: WorkflowMode
 ) {
   try {
-    // Update status to processing
     await prisma.videoGeneration.update({
       where: { id: generationId },
       data: { status: "processing" },
@@ -553,92 +625,173 @@ async function generateVideoInBackground(
       narrationGuide: narrationTextForSync,
     });
 
-    // Build the prompt from script and config
-    const prompt = buildVideoPrompt(
-      translatedPromptContext.script || translatedPromptContext.storyTopic || project.storyTopic || "Fruit product video",
-      imageConfig.emotionStyle,
-      imageConfig.visualStyle,
-      imageConfig.motionIntensity,
-      {
-        storyTopic: translatedPromptContext.storyTopic || project.storyTopic,
-        characterDescription: translatedPromptContext.characterDescription,
-        characterType: translatedPromptContext.characterType,
-        contentTone: translatedPromptContext.contentTone,
-        videoGenre: translatedPromptContext.videoGenre,
-        sceneLocation: translatedPromptContext.sceneLocation,
-        numberOfScenes: promptContext.numberOfScenes,
-        transitionEnabled: imageConfig.transitionEnabled,
-        subjectConsistent: effectiveSubjectConsistent,
-        hasReferenceImage,
-        referenceImageSource,
-        referenceImageName,
-        hasBrandBackgroundImage,
-        brandBackgroundImageSource,
-        brandBackgroundImageName,
-        narrationGuide: translatedPromptContext.narrationGuide || narrationTextForSync,
-      }
-    );
+    // Shared prompt builder options (used for both single and multi-clip)
+    const sharedPromptOptions = {
+      storyTopic: translatedPromptContext.storyTopic || project.storyTopic,
+      characterDescription: translatedPromptContext.characterDescription,
+      characterType: translatedPromptContext.characterType,
+      contentTone: translatedPromptContext.contentTone,
+      videoGenre: translatedPromptContext.videoGenre,
+      sceneLocation: translatedPromptContext.sceneLocation,
+      subjectConsistent: effectiveSubjectConsistent,
+      hasReferenceImage,
+      referenceImageSource,
+      referenceImageName,
+      hasBrandBackgroundImage,
+      brandBackgroundImageSource,
+      brandBackgroundImageName,
+    };
 
-    console.log(
-      `[Generation ${generationId}] Starting Runway video generation${referenceImageUrl ? " (image-to-video mode)" : ""}...`
-    );
+    // When both product + brand images exist, prioritize brand image as the scene anchor
+    const promptImageUrl = hasBrandBackgroundImage ? brandBackgroundImageUrl : referenceImageUrl;
+    const aiProvider = workflowMode === "veo3-direct" ? "veo3" : (videoConfig.aiProvider || "runway");
 
-    // Runway currently accepts one prompt image per task.
-    // When both product + brand images exist, prioritize brand/background as the scene anchor,
-    // while product identity is constrained by prompt text rules.
-    const promptImageUrlForRunway = hasBrandBackgroundImage
-      ? brandBackgroundImageUrl
-      : referenceImageUrl;
-
-    // RUN VIDEO + AUDIO IN PARALLEL for faster generation (save ~20 seconds)
-    console.log(`[Generation ${generationId}] Starting Runway video + FPT audio in parallel...`);
-    
-    const [runwayResult, voiceSettings] = await Promise.all([
-      // Video generation (returns the runway result)
-      generateVideoWithRunway({
-        prompt,
-        model: "gen4.5",
-        ratio: mapAspectRatioToRunwayRatio(videoConfig.aspectRatio),
-        durationSeconds: videoConfig.durationSeconds,
-        promptImageUrl: promptImageUrlForRunway,
-      }).then(result => {
-        console.log(`[Generation ${generationId}] ✅ Runway video generation completed`);
-        return result;
-      }),
-      
-      // Audio generation (returns voice settings)
-      generateAudioForGeneration({
-        generationId,
-        narrationTextForSync,
-        audioConfig,
-        videoConfig,
-      }).then(settings => {
-        console.log(`[Generation ${generationId}] ✅ Audio generation completed`);
-        return settings;
-      }),
-    ]);
-    
-    // Use parallel results
-    const result = runwayResult;
-
-    // Download and save video locally
-    let finalVideoUrl = result.videoUrl;
-    try {
-      console.log(`[Generation ${generationId}] Saving video to local storage...`);
-      finalVideoUrl = await downloadAndSaveVideo(result.videoUrl, generationId);
-    } catch (storageError) {
-      console.error(`[Generation ${generationId}] Failed to save video locally:`, storageError);
-      // Fallback to remote URL if local storage fails
-      console.warn(`[Generation ${generationId}] Falling back to remote video URL`);
-      finalVideoUrl = result.videoUrl;
+    if (promptImageUrl) {
+      console.log(`[Generation ${generationId}] Image-to-video: ${promptImageUrl.substring(0, 80)}...`);
     }
 
-    // Update generation with success
+    // Determine clips needed for the target duration
+    const clipsNeeded = videoConfig.durationSeconds > 10
+      ? Math.ceil(videoConfig.durationSeconds / 10)
+      : 1;
+
+    console.log(`[Generation ${generationId}] Starting ${aiProvider} (${clipsNeeded} clip${clipsNeeded > 1 ? "s" : ""}) + FPT audio in parallel...`);
+
+    // Audio always runs in parallel regardless of clip count
+    const audioPromise = generateAudioForGeneration({
+      generationId,
+      narrationTextForSync,
+      audioConfig,
+      videoConfig,
+    }).then(settings => {
+      console.log(`[Generation ${generationId}] ✅ Audio generation completed`);
+      return settings;
+    });
+
+    let finalVideoUrl: string;
+
+    if (clipsNeeded > 1) {
+      // ── Multi-scene: generate one 10 s clip per scene then concatenate ──
+      const rawScenes = parseScriptIntoScenes(promptContext.script || "");
+      const translatedScenes = parseScriptIntoScenes(translatedPromptContext.script || "");
+
+      // Pad/trim scenes to exactly the number of clips needed
+      const sceneSlots = buildSceneSlotsForClips(
+        rawScenes.length > 0 ? rawScenes : [{ sceneNo: 1, visualPrompt: "", voiceover: "", rawText: "" }],
+        clipsNeeded
+      );
+      const translatedSlots = buildSceneSlotsForClips(
+        translatedScenes.length > 0 ? translatedScenes : sceneSlots,
+        clipsNeeded
+      );
+
+      const clipPaths: string[] = [];
+
+      for (let sceneIdx = 0; sceneIdx < sceneSlots.length; sceneIdx++) {
+        // Store progress in thumbnailUrl so the [id] route can expose it
+        await prisma.videoGeneration.update({
+          where: { id: generationId },
+          data: { thumbnailUrl: `progress:${sceneIdx + 1}/${clipsNeeded}` },
+        });
+
+        const translatedScene = translatedSlots[sceneIdx];
+        const rawScene = sceneSlots[sceneIdx];
+
+        // Use translated visual description when available
+        const sceneVisual =
+          (translatedScene.visualPrompt || rawScene.visualPrompt || "").trim() ||
+          translatedPromptContext.storyTopic ||
+          project.storyTopic ||
+          "Fruit product scene";
+        const sceneVoiceover =
+          (translatedScene.voiceover || rawScene.voiceover || "").trim();
+
+        const scenePrompt = buildVideoPrompt(
+          sceneVisual,
+          imageConfig.emotionStyle,
+          imageConfig.visualStyle,
+          imageConfig.motionIntensity,
+          {
+            ...sharedPromptOptions,
+            numberOfScenes: 1,
+            transitionEnabled: false,
+            narrationGuide: sceneVoiceover || translatedPromptContext.narrationGuide || narrationTextForSync,
+          }
+        );
+
+        console.log(`[Generation ${generationId}] 🎬 Generating clip ${sceneIdx + 1}/${clipsNeeded}...`);
+
+        const clipVideoUrl = await generateSingleClip(
+          generationId,
+          scenePrompt,
+          aiProvider,
+          { ...videoConfig, durationSeconds: 10 },
+          promptImageUrl,
+        );
+
+        if (!clipVideoUrl) {
+          throw new Error(`Scene ${sceneIdx + 1} produced no video URL from ${aiProvider}.`);
+        }
+
+        const clipPath = await downloadClipFile(clipVideoUrl, `${generationId}-clip-${sceneIdx + 1}`);
+        clipPaths.push(clipPath);
+        console.log(`[Generation ${generationId}] ✅ Clip ${sceneIdx + 1}/${clipsNeeded} saved`);
+      }
+
+      // Concatenate all clips into the final video
+      await fs.mkdir(VIDEO_OUTPUT_DIR, { recursive: true });
+      const finalPath = path.join(VIDEO_OUTPUT_DIR, `${generationId}.mp4`);
+      console.log(`[Generation ${generationId}] Concatenating ${clipPaths.length} clips...`);
+      await concatenateVideoFiles(clipPaths, finalPath);
+
+      // Clean up temp clip files
+      for (const clipPath of clipPaths) {
+        await fs.unlink(clipPath).catch(() => {});
+      }
+
+      finalVideoUrl = buildFilesApiPath("uploads", "videos", `${generationId}.mp4`);
+      console.log(`[Generation ${generationId}] ✅ Multi-scene video ready: ${finalVideoUrl}`);
+    } else {
+      // ── Single clip: existing behavior ──
+      const fullPrompt = buildVideoPrompt(
+        translatedPromptContext.script || translatedPromptContext.storyTopic || project.storyTopic || "Fruit product video",
+        imageConfig.emotionStyle,
+        imageConfig.visualStyle,
+        imageConfig.motionIntensity,
+        {
+          ...sharedPromptOptions,
+          numberOfScenes: promptContext.numberOfScenes,
+          transitionEnabled: imageConfig.transitionEnabled,
+          narrationGuide: translatedPromptContext.narrationGuide || narrationTextForSync,
+        }
+      );
+
+      const singleVideoUrl = await generateSingleClip(
+        generationId,
+        fullPrompt,
+        aiProvider,
+        videoConfig,
+        promptImageUrl,
+      );
+
+      try {
+        finalVideoUrl = await downloadAndSaveVideo(singleVideoUrl, generationId);
+      } catch (storageError) {
+        console.error(`[Generation ${generationId}] Failed to save video locally:`, storageError);
+        finalVideoUrl = singleVideoUrl;
+      }
+
+      console.log(`[Generation ${generationId}] ✅ Single-clip video ready`);
+    }
+
+    const voiceSettings = await audioPromise;
+
     await prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         status: "completed",
         outputUrl: finalVideoUrl,
+        thumbnailUrl: null,
         voiceSettings,
       },
     });
@@ -649,16 +802,14 @@ async function generateVideoInBackground(
 
     const fallbackMessage = "Không thể tạo video lúc này. Vui lòng thử lại sau.";
     const errorMessage =
-      error instanceof RunwayGenerationError
+      error instanceof RunwayGenerationError || error instanceof KlingGenerationError
         ? error.message
         : (error as Error)?.message || fallbackMessage;
 
-    // Update generation with error
     await prisma.videoGeneration.update({
       where: { id: generationId },
       data: {
         status: "failed",
-        // Reuse thumbnailUrl field to persist human-readable error until schema adds error_message.
         thumbnailUrl: `error:${errorMessage}`.slice(0, 1000),
       },
     });

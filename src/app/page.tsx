@@ -4,10 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AiOptimizationSection } from "@/components/sections/AiOptimizationSection";
 import { ContentEditorSection } from "@/components/sections/ContentEditorSection";
 import { PreviewPanel } from "@/components/sections/PreviewPanel";
-import { RuntimeSettingsSection } from "@/components/sections/RuntimeSettingsSection";
 import { StudioHeader } from "@/components/sections/StudioHeader";
 import { VideoConfigSection } from "@/components/sections/VideoConfigSection";
 import { DraftSection } from "@/components/sections/DraftSection";
+import { WorkflowModeSection } from "@/components/sections/WorkflowModeSection";
+import { ApiConfigModal } from "@/components/sections/ApiConfigModal";
+import type { WorkflowMode } from "@/types/studio";
 import {
   getDefaultVoiceByGender,
   getVoiceGenderFromVoiceType,
@@ -92,13 +94,23 @@ function pickRandom<T>(items: readonly T[]): T {
   return items[Math.floor(Math.random() * items.length)];
 }
 
-function normalizeWebImageUrl(url?: string): string | undefined {
+function normalizeReferenceImageUrl(url?: string): string | undefined {
   const trimmed = url?.trim();
   if (!trimmed) {
     return undefined;
   }
 
-  return /^https?:\/\//i.test(trimmed) ? trimmed : undefined;
+  if (
+    /^https?:\/\//i.test(trimmed) ||
+    /^file:\/\//i.test(trimmed) ||
+    trimmed.startsWith("/api/files/") ||
+    trimmed.startsWith("/uploads/") ||
+    /^[a-zA-Z]:[\\/]/.test(trimmed)
+  ) {
+    return trimmed;
+  }
+
+  return undefined;
 }
 
 function buildDefaultCharacterDescription(
@@ -211,6 +223,9 @@ function mapProjectToForm(project: ProjectRecord): typeof DEFAULT_FORM {
       (getStringConfig(videoConfig, "resolution") as typeof DEFAULT_FORM.resolution) ||
       DEFAULT_FORM.resolution,
     aiModel: getStringConfig(videoConfig, "aiModel") || DEFAULT_FORM.aiModel,
+    aiProvider:
+      (getStringConfig(videoConfig, "aiProvider") as typeof DEFAULT_FORM.aiProvider) ||
+      DEFAULT_FORM.aiProvider,
     aspectRatio:
       (getStringConfig(videoConfig, "aspectRatio") as typeof DEFAULT_FORM.aspectRatio) ||
       DEFAULT_FORM.aspectRatio,
@@ -235,6 +250,7 @@ function mapProjectToForm(project: ProjectRecord): typeof DEFAULT_FORM {
 }
 
 const DEFAULT_FORM = {
+  workflowMode: "runway-ai-script" as WorkflowMode,
   title: "Dự án video trái cây",
   storyTopic: "",
   characterType: "Nữ tư vấn viên cửa hàng trái cây",
@@ -246,9 +262,10 @@ const DEFAULT_FORM = {
   videoGenre: "Giới thiệu trong cửa hàng",
   numberOfScenes: 3,
   resolution: "720p" as "720p" | "1080p",
-  aiModel: "Veo 3.1 Fast",
+  aiModel: "Gen 4.5",
+  aiProvider: "runway" as "runway" | "kling",
   aspectRatio: "9:16" as "9:16" | "1:1" | "16:9" | "4:5",
-  durationSeconds: 10,
+  durationSeconds: 15,
   emotionStyle: "Vật tươi",
   visualStyle: "Cinematic",
   motionIntensity: 50,
@@ -273,6 +290,8 @@ const DEFAULT_RUNTIME_SETTINGS: RuntimeSettingsRecord = {
   fptTtsUrl: "https://api.fpt.ai/hmi/tts/v5",
   fptAudioWaitTimeoutMs: 45000,
   fptTtsJobRetries: 2,
+  klingAccessKeyId: "",
+  klingAccessKeySecret: "",
   publicAppUrl: "",
 };
 
@@ -422,6 +441,7 @@ export default function HomePage() {
   const [projectId, setProjectId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<ProjectRecord[]>([]);
   const [form, setForm] = useState(DEFAULT_FORM);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedLabel, setLastSavedLabel] = useState("Chưa lưu");
   const [isGeneratingScript, setIsGeneratingScript] = useState(false);
@@ -429,6 +449,7 @@ export default function HomePage() {
   const [isPreviewingVoice, setIsPreviewingVoice] = useState(false);
   const [generationId, setGenerationId] = useState<string | null>(null);
   const [generationStatus, setGenerationStatus] = useState<GenerationState>("idle");
+  const [generationProgressMessage, setGenerationProgressMessage] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | undefined>(undefined);
   const [audioUrl, setAudioUrl] = useState<string | undefined>(undefined);
   const [previewVoiceUrl, setPreviewVoiceUrl] = useState<string | undefined>(undefined);
@@ -513,6 +534,7 @@ export default function HomePage() {
       videoConfig: {
         resolution: form.resolution,
         aiModel: form.aiModel,
+        aiProvider: form.aiProvider,
         aspectRatio: form.aspectRatio,
         durationSeconds: form.durationSeconds,
       },
@@ -538,6 +560,7 @@ export default function HomePage() {
     return created.id;
   }, [
     form.aiModel,
+     form.aiProvider,
     form.aspectRatio,
     form.bgMusicEnabled,
     form.characterDescription,
@@ -579,6 +602,7 @@ export default function HomePage() {
         videoConfig: {
           resolution: form.resolution,
           aiModel: form.aiModel,
+          aiProvider: form.aiProvider,
           aspectRatio: form.aspectRatio,
           durationSeconds: form.durationSeconds,
         },
@@ -796,16 +820,16 @@ export default function HomePage() {
       }
 
       const hasManualReferenceUrl = Boolean(referenceImageUrl?.trim());
-      const webReferenceImageUrl = normalizeWebImageUrl(referenceImageUrl);
-      if (hasManualReferenceUrl && !webReferenceImageUrl) {
-        throw new Error("URL ảnh phải bắt đầu bằng http:// hoặc https://.");
+      const manualReferenceImageUrl = normalizeReferenceImageUrl(referenceImageUrl);
+      if (hasManualReferenceUrl && !manualReferenceImageUrl) {
+        throw new Error("URL ảnh phải là http(s), file://, /api/files/... hoặc đường dẫn file cục bộ hợp lệ.");
       }
 
-      const uploadedWebImageUrl = normalizeWebImageUrl(uploadedSampleImageUrl);
-      const effectiveReferenceImageUrl = webReferenceImageUrl ?? uploadedWebImageUrl;
-      const referenceImageSource = webReferenceImageUrl
+      const uploadedReferenceImageUrl = normalizeReferenceImageUrl(uploadedSampleImageUrl);
+      const effectiveReferenceImageUrl = manualReferenceImageUrl ?? uploadedReferenceImageUrl;
+      const referenceImageSource = manualReferenceImageUrl
         ? "url"
-        : uploadedWebImageUrl
+        : uploadedReferenceImageUrl
         ? "upload"
         : undefined;
 
@@ -820,7 +844,7 @@ export default function HomePage() {
             form.aspectRatio
           );
           const compositeUpload = await uploadSampleImage(compositeFile);
-          compositeReferenceImageUrl = compositeUpload.absoluteUrl;
+          compositeReferenceImageUrl = compositeUpload.url;
           compositeReferenceImageName = compositeUpload.fileName;
         } catch (compositeError) {
           console.warn("[Composite] Failed to build composite reference image. Falling back to product image.", compositeError);
@@ -838,6 +862,7 @@ export default function HomePage() {
         videoConfig: {
           resolution: form.resolution,
           aiModel: form.aiModel,
+          aiProvider: form.aiProvider,
           aspectRatio: form.aspectRatio,
           durationSeconds: form.durationSeconds,
         },
@@ -859,8 +884,12 @@ export default function HomePage() {
         },
       });
 
+      const derivedAiProvider: "runway" | "kling" =
+        form.workflowMode === "kling-ai-script" ? "kling" : "runway";
+
       const generation = await createGeneration({
         projectId: pid,
+        workflowMode: form.workflowMode,
         storyTopic: form.storyTopic,
         script: form.script,
         characterDescription: form.characterDescription,
@@ -872,6 +901,7 @@ export default function HomePage() {
         videoConfig: {
           resolution: form.resolution,
           aiModel: form.aiModel,
+          aiProvider: derivedAiProvider,
           aspectRatio: form.aspectRatio,
           durationSeconds: form.durationSeconds,
         },
@@ -1026,6 +1056,7 @@ export default function HomePage() {
         setGenerationStatus(status);
         setVideoUrl(statusData.videoUrl);
         setAudioUrl(statusData.audioUrl);
+        setGenerationProgressMessage(statusData.progressMessage ?? null);
 
         if (status === "failed") {
           const failedMessage =
@@ -1051,6 +1082,7 @@ export default function HomePage() {
 
         if (status === "completed" || status === "failed") {
           setIsGeneratingVideo(false);
+          setGenerationProgressMessage(null);
           clearInterval(timer);
         }
       } catch {
@@ -1174,7 +1206,7 @@ export default function HomePage() {
         return;
       }
 
-      setUploadedSampleImageUrl(uploadResult.absoluteUrl);
+      setUploadedSampleImageUrl(uploadResult.url);
     } catch (error) {
       if (sampleImageUploadTokenRef.current !== uploadToken) {
         return;
@@ -1218,7 +1250,7 @@ export default function HomePage() {
         return;
       }
 
-      setUploadedBrandImageUrl(uploadResult.absoluteUrl);
+      setUploadedBrandImageUrl(uploadResult.url);
     } catch (error) {
       if (brandImageUploadTokenRef.current !== uploadToken) {
         return;
@@ -1295,24 +1327,33 @@ export default function HomePage() {
 
       <div className="mx-auto max-w-7xl">
         <div className="reveal-up [animation-delay:80ms]">
-          <StudioHeader />
+          <StudioHeader onSettingsClick={() => setIsSettingsOpen(true)} />
         </div>
 
-        <div className="mb-5 reveal-up [animation-delay:120ms]">
-          <RuntimeSettingsSection
+        {isSettingsOpen && (
+          <ApiConfigModal
             settings={runtimeSettings}
             storagePath={settingsStoragePath}
             isLoading={isLoadingSettings}
             isSaving={isSavingSettings}
+            workflowMode={form.workflowMode}
             onChange={updateRuntimeSettings}
             onSave={handleSaveRuntimeSettings}
+            onClose={() => setIsSettingsOpen(false)}
           />
-        </div>
+        )}
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
           <div className="space-y-6">
+            <div className="reveal-up [animation-delay:130ms]">
+              <WorkflowModeSection
+                workflowMode={form.workflowMode}
+                onChange={(mode) => updateForm({ workflowMode: mode })}
+              />
+            </div>
             <div className="reveal-up [animation-delay:140ms]">
               <ContentEditorSection
+                workflowMode={form.workflowMode}
                 storyTopic={form.storyTopic}
                 characterDescription={form.characterDescription}
                 characterType={form.characterType}
@@ -1364,13 +1405,17 @@ export default function HomePage() {
             </div>
             <div className="reveal-up [animation-delay:190ms]">
               <VideoConfigSection
+                workflowMode={form.workflowMode}
                 resolution={form.resolution}
                 aiModel={form.aiModel}
                 aspectRatio={form.aspectRatio}
                 durationSeconds={form.durationSeconds}
                 onResolutionChange={(value) => updateForm({ resolution: value })}
                 onAspectRatioChange={(value) => updateForm({ aspectRatio: value })}
-                onDurationSecondsChange={(value) => updateForm({ durationSeconds: value })}
+                onDurationSecondsChange={(value) => {
+                  const autoScenes = value > 10 ? Math.ceil(value / 10) : form.numberOfScenes;
+                  updateForm({ durationSeconds: value, numberOfScenes: autoScenes });
+                }}
               />
             </div>
             <div className="reveal-up [animation-delay:240ms]">
@@ -1452,7 +1497,7 @@ export default function HomePage() {
               ) : null}
 
               {generationResultModal ? (
-                <div className="fixed inset-0 z-[140] flex items-center justify-center bg-[#0f2a1d]/28 px-4 backdrop-blur-[1px]">
+                <div className="fixed inset-0 z-140 flex items-center justify-center bg-[#0f2a1d]/28 px-4 backdrop-blur-[1px]">
                   <div className="w-full max-w-md rounded-2xl border border-[#b9e6ce] bg-[#f3fbf7] p-5 shadow-[0_20px_50px_rgba(27,79,55,0.26)] md:p-6">
                     <p className="text-xs font-semibold uppercase tracking-wide text-[#3f7a5f]">
                       Kết quả tạo video
@@ -1518,6 +1563,7 @@ export default function HomePage() {
               referenceImageUrl={referenceImageUrl}
               onReferenceImageUrlChange={handleReferenceImageUrlChange}
               generationStatus={previewStatus}
+              generationProgressMessage={generationProgressMessage ?? undefined}
               videoUrl={videoUrl}
               audioUrl={audioUrl}
               generationId={generationId ?? undefined}

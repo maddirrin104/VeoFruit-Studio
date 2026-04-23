@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { getPublicPath } from "@/lib/runtime-path";
+import { getPublicPath, getRuntimeStorageRoot } from "@/lib/runtime-path";
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   ".mp3": "audio/mpeg",
@@ -17,7 +17,7 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   ".gif": "image/gif",
 };
 
-function resolveSafePublicPath(parts: string[]): string | null {
+async function resolveSafePublicPath(parts: string[]): Promise<string | null> {
   const normalized = parts
     .flatMap((item) => item.split("/"))
     .map((item) => decodeURIComponent(item).trim())
@@ -31,11 +31,18 @@ function resolveSafePublicPath(parts: string[]): string | null {
     return null;
   }
 
-  const publicRoot = path.resolve(getPublicPath());
-  const candidate = path.resolve(publicRoot, ...normalized);
+  const roots = [path.resolve(getPublicPath()), path.resolve(getRuntimeStorageRoot())];
 
-  if (candidate === publicRoot || candidate.startsWith(`${publicRoot}${path.sep}`)) {
-    return candidate;
+  for (const root of roots) {
+    const candidate = path.resolve(root, ...normalized);
+    if (candidate === root || candidate.startsWith(`${root}${path.sep}`)) {
+      try {
+        await fs.access(candidate);
+        return candidate;
+      } catch {
+        // Try the next storage root.
+      }
+    }
   }
 
   return null;
@@ -52,8 +59,9 @@ export async function GET(
 ) {
   try {
     const { assetPath } = await context.params;
-    const filePath = resolveSafePublicPath(assetPath || []);
+    const filePath = await resolveSafePublicPath(assetPath || []);
     if (!filePath) {
+      console.warn(`[Files API] Invalid asset path:`, assetPath?.join("/"));
       return NextResponse.json({ error: "Invalid asset path" }, { status: 400 });
     }
 
@@ -61,11 +69,14 @@ export async function GET(
     try {
       fileBuffer = await fs.readFile(filePath);
     } catch {
+      console.warn(`[Files API] Asset not found: ${filePath}`);
       return NextResponse.json({ error: "Asset not found" }, { status: 404 });
     }
 
     const contentType = getMimeType(filePath);
     const isMedia = contentType.startsWith("audio/") || contentType.startsWith("video/");
+
+    console.log(`[Files API] Served asset: ${path.basename(filePath)} (${(fileBuffer.byteLength / 1024).toFixed(2)}KB, ${contentType})`);
 
     return new NextResponse(new Uint8Array(fileBuffer), {
       status: 200,

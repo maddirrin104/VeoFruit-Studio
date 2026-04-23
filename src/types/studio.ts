@@ -1,5 +1,11 @@
 import type { VoiceType } from "@/lib/voice-options";
 
+export type WorkflowMode =
+  | "runway-manual"    // Mode 1: RunwayML + paste script manually + FPT voice
+  | "runway-ai-script" // Mode 2: RunwayML + AI-generated script + FPT voice
+  | "veo3-direct"      // Mode 3: Google Veo3 directly + AI script + FPT voice
+  | "kling-ai-script"; // Mode 4: Kling AI + AI-generated script + FPT voice
+
 export interface OptionItem {
   label: string;
   subLabel?: string;
@@ -16,6 +22,7 @@ export interface SceneItem {
 export interface VideoConfigInput {
   resolution: "720p" | "1080p";
   aiModel: string;
+  aiProvider: "runway" | "kling";
   aspectRatio: "9:16" | "1:1" | "16:9" | "4:5";
   durationSeconds: number;
 }
@@ -64,6 +71,7 @@ export type UpdateProjectRequest = CreateProjectRequest;
 
 export interface CreateGenerationRequest {
   projectId: string;
+  workflowMode?: WorkflowMode;
   storyTopic?: string;
   script?: string;
   characterDescription?: string;

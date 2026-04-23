@@ -12,6 +12,8 @@ export interface RuntimeSettingsInput {
   fptTtsUrl?: string;
   fptAudioWaitTimeoutMs?: number;
   fptTtsJobRetries?: number;
+  klingAccessKeyId?: string;
+  klingAccessKeySecret?: string;
   publicAppUrl?: string;
 }
 
@@ -25,11 +27,15 @@ export interface RuntimeSettingsResolved {
   fptTtsUrl: string;
   fptAudioWaitTimeoutMs: number;
   fptTtsJobRetries: number;
+  klingAccessKeyId?: string;
+  klingAccessKeySecret?: string;
   publicAppUrl?: string;
 }
 
 const SETTINGS_FILE_NAME = "runtime-settings.json";
 const SETTINGS_DIR = path.join(os.homedir(), ".veofruit-studio");
+const LOCAL_DATABASE_DIR = path.join(SETTINGS_DIR, "data");
+const LOCAL_DATABASE_FILE = path.join(LOCAL_DATABASE_DIR, "veofruit.db");
 
 function normalizeOptionalString(value: unknown): string | undefined {
   if (typeof value !== "string") {
@@ -38,6 +44,38 @@ function normalizeOptionalString(value: unknown): string | undefined {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+export function normalizeDatabaseUrl(value: unknown): string | undefined {
+  const url = normalizeOptionalString(value);
+  if (!url) {
+    return undefined;
+  }
+
+  if (!url.toLowerCase().startsWith("file:")) {
+    return url;
+  }
+
+  try {
+    const parsed = new URL(url);
+    const normalizedPath = decodeURIComponent(parsed.pathname)
+      .replace(/^\/+/, "")
+      .replace(/\\/g, "/");
+
+    if (!normalizedPath) {
+      return undefined;
+    }
+
+    return `file:${normalizedPath}`;
+  } catch {
+    const localPath = url.slice("file:".length).trim();
+    if (!localPath) {
+      return undefined;
+    }
+
+    const normalizedPath = localPath.replace(/^\/+/, "").replace(/\\/g, "/");
+    return `file:${normalizedPath}`;
+  }
 }
 
 function normalizeInt(value: unknown, fallback: number, min: number, max: number): number {
@@ -74,7 +112,7 @@ function sanitizeSettings(input: unknown): RuntimeSettingsInput {
   const fptTtsJobRetries = normalizeInt(payload.fptTtsJobRetries, 2, 1, 8);
 
   return {
-    databaseUrl: normalizeOptionalString(payload.databaseUrl),
+    databaseUrl: normalizeDatabaseUrl(payload.databaseUrl),
     googleApiKey: normalizeOptionalString(payload.googleApiKey),
     runwayApiSecret: normalizeOptionalString(payload.runwayApiSecret),
     runwayApiBaseUrl:
@@ -84,6 +122,8 @@ function sanitizeSettings(input: unknown): RuntimeSettingsInput {
     fptTtsUrl: normalizeOptionalString(payload.fptTtsUrl) || "https://api.fpt.ai/hmi/tts/v5",
     fptAudioWaitTimeoutMs,
     fptTtsJobRetries,
+    klingAccessKeyId: normalizeOptionalString(payload.klingAccessKeyId),
+    klingAccessKeySecret: normalizeOptionalString(payload.klingAccessKeySecret),
     publicAppUrl: normalizeOptionalString(payload.publicAppUrl),
   };
 }
@@ -107,8 +147,9 @@ async function readSettingsFile(): Promise<RuntimeSettingsInput> {
 }
 
 function mergeWithEnvironment(stored: RuntimeSettingsInput): RuntimeSettingsResolved {
+  const preferLocalDatabase = Boolean(normalizeOptionalString(process.env.VEOFRUIT_APP_ROOT));
   const fromEnv = {
-    databaseUrl: normalizeOptionalString(process.env.DATABASE_URL),
+    databaseUrl: preferLocalDatabase ? undefined : normalizeDatabaseUrl(process.env.DATABASE_URL),
     googleApiKey: normalizeOptionalString(process.env.GOOGLE_API_KEY),
     runwayApiSecret: normalizeOptionalString(process.env.RUNWAYML_API_SECRET),
     runwayApiBaseUrl: normalizeOptionalString(process.env.RUNWAY_API_BASE_URL),
@@ -117,13 +158,27 @@ function mergeWithEnvironment(stored: RuntimeSettingsInput): RuntimeSettingsReso
     fptTtsUrl: normalizeOptionalString(process.env.FPT_AI_TTS_URL),
     fptAudioWaitTimeoutMs: normalizeInt(process.env.FPT_AUDIO_WAIT_TIMEOUT_MS, 45000, 5000, 180000),
     fptTtsJobRetries: normalizeInt(process.env.FPT_TTS_JOB_RETRIES, 2, 1, 8),
+    klingAccessKeyId: normalizeOptionalString(process.env.KLING_ACCESS_KEY_ID),
+    klingAccessKeySecret: normalizeOptionalString(process.env.KLING_ACCESS_KEY_SECRET),
     publicAppUrl: normalizeOptionalString(process.env.PUBLIC_APP_URL),
   };
 
-  return sanitizeSettings({
+  const merged = sanitizeSettings({
     ...fromEnv,
     ...stored,
   }) as RuntimeSettingsResolved;
+
+  merged.databaseUrl = normalizeDatabaseUrl(merged.databaseUrl);
+
+  if (preferLocalDatabase && merged.databaseUrl && !merged.databaseUrl.toLowerCase().startsWith("file:")) {
+    merged.databaseUrl = undefined;
+  }
+
+  if (!merged.databaseUrl) {
+    merged.databaseUrl = getDefaultLocalDatabaseUrl();
+  }
+
+  return merged;
 }
 
 export async function getRuntimeSettings(): Promise<RuntimeSettingsResolved> {
@@ -147,4 +202,12 @@ export async function saveRuntimeSettings(partial: RuntimeSettingsInput): Promis
 
 export function getRuntimeSettingsFilePath(): string {
   return getSettingsFilePath();
+}
+
+export function getDefaultLocalDatabaseFilePath(): string {
+  return LOCAL_DATABASE_FILE;
+}
+
+export function getDefaultLocalDatabaseUrl(): string {
+  return `file:${getDefaultLocalDatabaseFilePath().replace(/\\/g, "/")}`;
 }

@@ -30,6 +30,7 @@ type PreviewPanelProps = {
   referenceImageUrl?: string;
   onReferenceImageUrlChange?: (url: string) => void;
   generationStatus?: "idle" | "pending" | "processing" | "completed" | "failed";
+  generationProgressMessage?: string;
   videoUrl?: string;
   audioUrl?: string;
   generationId?: string;
@@ -55,6 +56,7 @@ export function PreviewPanel({
   referenceImageUrl,
   onReferenceImageUrlChange,
   generationStatus = "idle",
+  generationProgressMessage,
   videoUrl,
   audioUrl,
   generationId,
@@ -156,7 +158,7 @@ export function PreviewPanel({
                 {generationStatus === "failed"
                   ? "Tạo video thất bại"
                   : generationStatus === "processing" || generationStatus === "pending"
-                  ? "Đang tạo video..."
+                  ? (generationProgressMessage ?? "Đang tạo video...")
                   : "Chưa có preview"}
               </p>
             </div>

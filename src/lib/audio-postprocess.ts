@@ -44,6 +44,14 @@ function normalizeRootAliasPath(inputPath: string): string {
   return inputPath;
 }
 
+function normalizeAsarUnpackedPath(inputPath: string): string {
+  if (!inputPath) {
+    return inputPath;
+  }
+
+  return inputPath.replace(/\.asar([\\/])/i, ".asar.unpacked$1");
+}
+
 async function canAccessFile(filePath: string): Promise<boolean> {
   try {
     await fs.access(filePath);
@@ -57,12 +65,17 @@ async function resolveFfmpegBinaryPath(): Promise<string> {
   const candidates: string[] = [];
 
   if (ffmpegPath) {
+    const rootAliasPath = normalizeRootAliasPath(ffmpegPath);
     candidates.push(ffmpegPath);
-    candidates.push(normalizeRootAliasPath(ffmpegPath));
+    candidates.push(rootAliasPath);
+    candidates.push(normalizeAsarUnpackedPath(ffmpegPath));
+    candidates.push(normalizeAsarUnpackedPath(rootAliasPath));
   }
 
   const platformBinary = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
-  candidates.push(path.join(getAppRoot(), "node_modules", "ffmpeg-static", platformBinary));
+  const localNodeModulesPath = path.join(getAppRoot(), "node_modules", "ffmpeg-static", platformBinary);
+  candidates.push(localNodeModulesPath);
+  candidates.push(normalizeAsarUnpackedPath(localNodeModulesPath));
 
   for (const candidate of candidates) {
     if (!candidate) {

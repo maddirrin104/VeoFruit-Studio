@@ -3,9 +3,9 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { getRuntimeSettings } from "@/lib/runtime-settings";
-import { buildFilesApiPath, getPublicPath } from "@/lib/runtime-path";
+import { buildFilesApiPath, getRuntimeMediaPath } from "@/lib/runtime-path";
 
-const UPLOAD_DIR = getPublicPath("uploads");
+const UPLOAD_DIR = getRuntimeMediaPath("uploads");
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 const MIME_TO_EXT: Record<string, string> = {
@@ -54,6 +54,7 @@ export async function POST(request: Request) {
     }
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
+      console.warn(`Upload rejected: File too large (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
       return NextResponse.json(
         { error: "Image must be 10MB or smaller" },
         { status: 400 }
@@ -62,6 +63,7 @@ export async function POST(request: Request) {
 
     const ext = MIME_TO_EXT[file.type];
     if (!ext) {
+      console.warn(`Upload rejected: Unsupported format (${file.type})`);
       return NextResponse.json(
         { error: "Unsupported image format. Please use JPG, PNG, WEBP, or GIF." },
         { status: 400 }
@@ -79,6 +81,10 @@ export async function POST(request: Request) {
 
     const url = buildFilesApiPath("uploads", fileName);
     const absoluteUrl = `${await getPublicOrigin(request)}${url}`;
+
+    console.log(`✅ Image uploaded successfully: ${fileName} (${(buffer.length / 1024 / 1024).toFixed(2)}MB)`);
+    console.log(`   Local path: ${outputPath}`);
+    console.log(`   API URL: ${url}`);
 
     return NextResponse.json({
       data: {

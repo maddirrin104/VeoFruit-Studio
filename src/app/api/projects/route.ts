@@ -16,7 +16,7 @@ function mapServerErrorToMessage(error: unknown): { message: string; status: num
   if (normalized.includes("environment variable not found: database_url")) {
     return {
       message:
-        "DATABASE_URL chưa được cấu hình cho app desktop. Hãy vào Settings API, nhập DATABASE_URL rồi bấm Lưu Settings, sau đó mở lại app.",
+        "Khong tim thay DATABASE_URL. App se tu dong dung local database, vui long khoi dong lai app de thu lai.",
       status: 400,
     };
   }
@@ -27,7 +27,7 @@ function mapServerErrorToMessage(error: unknown): { message: string; status: num
   ) {
     return {
       message:
-        "Database chưa có đủ bảng. Hãy chạy file database_setup.sql vào đúng database đang dùng trong DATABASE_URL.",
+        "Local database schema chua duoc tao day du. Vui long mo lai app de he thong tu khoi tao lai schema.",
       status: 400,
     };
   }
@@ -39,7 +39,7 @@ function mapServerErrorToMessage(error: unknown): { message: string; status: num
   ) {
     return {
       message:
-        "Không kết nối được PostgreSQL. Hãy kiểm tra container/database đang chạy và DATABASE_URL trỏ đúng host:port.",
+        "Khong the ket noi database. Neu dang dung DATABASE_URL ngoai, vui long kiem tra host:port; neu dung local DB thi khoi dong lai app.",
       status: 400,
     };
   }

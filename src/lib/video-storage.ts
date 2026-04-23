@@ -1,8 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { buildFilesApiPath, getPublicPath } from "@/lib/runtime-path";
+import { buildFilesApiPath, getRuntimeMediaPath } from "@/lib/runtime-path";
 
-const VIDEO_OUTPUT_DIR = getPublicPath("uploads", "videos");
+const VIDEO_OUTPUT_DIR = getRuntimeMediaPath("uploads", "videos");
 
 /**
  * Download video from URL and save it locally

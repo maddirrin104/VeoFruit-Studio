@@ -1,4 +1,5 @@
 const { createServer } = require("http");
+const net = require("net");
 const fs = require("fs");
 const path = require("path");
 const Module = require("module");
@@ -11,6 +12,20 @@ const PACKAGED_SERVER_PORT = Number(process.env.VEOFRUIT_DESKTOP_PORT || "3200")
 let mainWindow;
 let server;
 let serverUrl;
+
+// ── Single-instance lock ──────────────────────────────────────────────────────
+// Prevents a second copy of the app from opening; instead focuses the existing window.
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  });
+}
 
 function patchPrismaHashedModuleAlias() {
   const originalResolveFilename = Module._resolveFilename;
@@ -118,6 +133,56 @@ function getProjectRoot() {
   return path.resolve(__dirname, "..");
 }
 
+function setupPrismaEnginePath() {
+  if (!app.isPackaged) {
+    return;
+  }
+
+  // In the packaged app, asarUnpack puts the native engine at app.asar.unpacked/
+  // Prisma resolves the path using __dirname (which is inside app.asar), so it
+  // can't find the DLL. Explicitly point Prisma to the real unpacked location.
+  const enginePath = path.join(
+    process.resourcesPath,
+    "app.asar.unpacked",
+    "src",
+    "generated",
+    "prisma",
+    "query_engine-windows.dll.node"
+  );
+
+  if (fs.existsSync(enginePath)) {
+    process.env.PRISMA_QUERY_ENGINE_LIBRARY = enginePath;
+    console.log(`[prisma-engine] path=${enginePath}`);
+  } else {
+    console.warn(`[prisma-engine] WARNING: native engine not found at ${enginePath}`);
+  }
+}
+
+// ── Find a free TCP port starting from `startPort` ───────────────────────────
+function findFreePort(startPort) {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.on("error", () => resolve(findFreePort(startPort + 1)));
+    srv.listen(startPort, HOSTNAME, () => {
+      srv.close(() => resolve(startPort));
+    });
+  });
+}
+
+// ── Resolve the app icon path ─────────────────────────────────────────────────
+function getIconPath() {
+  if (app.isPackaged) {
+    // After packaging, icon is in the resources folder
+    const packed = path.join(process.resourcesPath, "app-icon.png");
+    if (fs.existsSync(packed)) return packed;
+  }
+  // Dev mode: use the file from the public folder
+  const devIcon = path.join(getProjectRoot(), "public", "app-icon.png");
+  if (fs.existsSync(devIcon)) return devIcon;
+  return undefined;
+}
+
 async function startNextServer() {
   if (serverUrl) {
     return serverUrl;
@@ -137,9 +202,14 @@ async function startNextServer() {
     handleRequest(request, response);
   });
 
+  // Find a free port to avoid conflicts on restart
+  const port = app.isPackaged
+    ? await findFreePort(PACKAGED_SERVER_PORT)
+    : 0;
+
   await new Promise((resolve, reject) => {
     server.once("error", reject);
-    server.listen(app.isPackaged ? PACKAGED_SERVER_PORT : 0, HOSTNAME, resolve);
+    server.listen(port, HOSTNAME, resolve);
   });
 
   const address = server.address();
@@ -155,6 +225,7 @@ async function startNextServer() {
 
 async function createMainWindow() {
   const url = await startNextServer();
+  const iconPath = getIconPath();
 
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -164,6 +235,7 @@ async function createMainWindow() {
     backgroundColor: "#f4efe6",
     autoHideMenuBar: true,
     title: "VeoFruit Studio",
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -182,6 +254,7 @@ app.setAppUserModelId("com.veofruit.studio");
 
 patchPrismaHashedModuleAlias();
 ensureWindowsProcessEnv();
+setupPrismaEnginePath();
 logMain("boot", `platform=${process.platform} packaged=${app.isPackaged}`);
 logMain(
   "env",

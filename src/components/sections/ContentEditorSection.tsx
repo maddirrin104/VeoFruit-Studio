@@ -9,6 +9,7 @@ import {
   TextArea,
   TextInput,
 } from "@/components/ui/FormControls";
+import type { WorkflowMode } from "@/types/studio";
 
 const topicTypes = [
   "Giới thiệu",
@@ -54,6 +55,7 @@ const sceneLocationOptions = [
 ] as const;
 
 type ContentEditorSectionProps = {
+  workflowMode: WorkflowMode;
   storyTopic: string;
   characterDescription: string;
   characterType: string;
@@ -84,6 +86,7 @@ function FieldLabel({ children }: { children: string }) {
 }
 
 export function ContentEditorSection({
+  workflowMode,
   storyTopic,
   characterDescription,
   characterType,
@@ -104,6 +107,7 @@ export function ContentEditorSection({
   onGenerateScript,
   onRandomizeScript,
 }: ContentEditorSectionProps) {
+  const isManualScriptMode = workflowMode === "runway-manual";
   const [isScriptReaderOpen, setIsScriptReaderOpen] = useState(false);
   const [characterEntryMode, setCharacterEntryMode] = useState<"preset" | "custom">(
     characterTypeOptions.includes(characterType as (typeof characterTypeOptions)[number])
@@ -147,12 +151,15 @@ export function ContentEditorSection({
 
         <div className="space-y-5">
           <div className="space-y-2">
-            <FieldLabel>Chọn trái cây</FieldLabel>
+            <FieldLabel>Chủ đề hoặc nội dung tài liệu</FieldLabel>
             <TextInput
-              placeholder="VD: Quả dâu tây tươi ngon, mọng nước..."
+              placeholder="VD: Dán nội dung tài liệu hoặc nhập chủ đề trái cây để AI chuyển thành kịch bản video..."
               value={storyTopic}
               onChange={(event) => onStoryTopicChange(event.target.value)}
             />
+            <p className="text-xs text-[#5f8f79]">
+              Có thể nhập ngắn theo chủ đề hoặc dán nội dung tài liệu để AI dựng kịch bản theo từng cảnh.
+            </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -331,25 +338,42 @@ export function ContentEditorSection({
                   Chế độ đọc
                 </button>
 
-                <button
-                  type="button"
-                  onClick={onRandomizeScript}
-                  disabled={isGeneratingScript}
-                  className="rounded-full border border-[#9fdab9] bg-[#f1fbf5] px-4 py-2 text-xs font-semibold text-[#1d734e] transition hover:border-[#7fcea5]"
-                >
-                  Random kịch bản
-                </button>
+                {!isManualScriptMode && (
+                  <button
+                    type="button"
+                    onClick={onRandomizeScript}
+                    disabled={isGeneratingScript}
+                    className="rounded-full border border-[#9fdab9] bg-[#f1fbf5] px-4 py-2 text-xs font-semibold text-[#1d734e] transition hover:border-[#7fcea5]"
+                  >
+                    Random kịch bản
+                  </button>
+                )}
 
-                <button
-                  type="button"
-                  onClick={onGenerateScript}
-                  disabled={isGeneratingScript}
-                  className="rounded-full bg-[#0eb35f] px-4 py-2 text-xs font-semibold text-white shadow-[0_8px_20px_rgba(14,179,95,0.3)] transition hover:bg-[#0ba455]"
-                >
-                  {isGeneratingScript ? "Đang tạo..." : "AI tạo kịch bản"}
-                </button>
+                {isManualScriptMode ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-[#f5d07a] bg-[#fefbf0] px-4 py-2 text-xs font-semibold text-[#7a5a10]">
+                    <svg className="size-3.5" viewBox="0 0 16 16" fill="none">
+                      <path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                    Dán kịch bản bên dưới
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={onGenerateScript}
+                    disabled={isGeneratingScript}
+                    className="rounded-full bg-[#0eb35f] px-4 py-2 text-xs font-semibold text-white shadow-[0_8px_20px_rgba(14,179,95,0.3)] transition hover:bg-[#0ba455]"
+                  >
+                    {isGeneratingScript ? "Đang tạo..." : "AI tạo kịch bản"}
+                  </button>
+                )}
               </div>
             </div>
+
+            {isManualScriptMode && (
+              <p className="rounded-lg border border-[#f5d07a] bg-[#fefbf0] px-3 py-2 text-xs text-[#7a5a10]">
+                Mode thủ công: Dán kịch bản từ ChatGPT, Gemini hoặc nguồn khác vào ô bên dưới. AI sẽ không tự sinh kịch bản.
+              </p>
+            )}
 
             <div className="flex items-center justify-between gap-2 text-xs text-[#5f8f79]">
               <span>{scriptMeta.lines} dòng</span>
@@ -358,7 +382,7 @@ export function ContentEditorSection({
 
             <TextArea
               rows={6}
-              placeholder="Mô tả từng cảnh quay về trái cây..."
+              placeholder={isManualScriptMode ? "Dán kịch bản từ ChatGPT, Gemini hoặc nguồn bên ngoài vào đây..." : "Mô tả từng cảnh quay về trái cây..."}
               value={script}
               onChange={(event) => onScriptChange(event.target.value)}
             />

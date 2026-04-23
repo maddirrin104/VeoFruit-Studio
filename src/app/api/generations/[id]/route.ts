@@ -34,6 +34,23 @@ export async function GET(
         ? generation.thumbnailUrl.slice("error:".length)
         : null;
 
+    // Parse multi-scene progress from thumbnailUrl: "progress:3/7"
+    const progressMatch =
+      typeof generation?.thumbnailUrl === "string" &&
+      generation.thumbnailUrl.startsWith("progress:")
+        ? generation.thumbnailUrl.slice("progress:".length).match(/^(\d+)\/(\d+)$/)
+        : null;
+    const progressCurrent = progressMatch ? parseInt(progressMatch[1], 10) : null;
+    const progressTotal = progressMatch ? parseInt(progressMatch[2], 10) : null;
+    const progressPercent =
+      progressCurrent !== null && progressTotal !== null && progressTotal > 0
+        ? Math.round((progressCurrent / progressTotal) * 100)
+        : 0;
+    const progressMessage =
+      progressCurrent !== null && progressTotal !== null
+        ? `Đang tạo cảnh ${progressCurrent}/${progressTotal}...`
+        : null;
+
     const voiceSettings =
       generation?.voiceSettings && typeof generation.voiceSettings === "object"
         ? (generation.voiceSettings as Record<string, unknown>)
@@ -66,7 +83,8 @@ export async function GET(
         id: generation.id,
         projectId: generation.projectId,
         status: generation?.status || "pending",
-        progress: 0,
+        progress: progressPercent,
+        progressMessage,
         videoUrl: generation?.outputUrl,
         audioUrl,
         voiceTypeApplied,

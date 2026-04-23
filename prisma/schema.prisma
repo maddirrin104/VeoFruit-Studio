@@ -1,19 +1,20 @@
 generator client {
-  provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
+  provider   = "prisma-client-js"
+  output     = "../src/generated/prisma"
+  engineType = "wasm"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id           String        @id @default(uuid()) @db.Uuid
-  email        String        @unique @db.VarChar(255)
-  fullName     String        @db.VarChar(126) @map("full_name")
-  passwordHash String        @db.Text @map("password_hash")
-  createdAt    DateTime      @default(now()) @db.Timestamptz(6) @map("created_at")
+  id           String        @id @default(uuid())
+  email        String        @unique
+  fullName     String        @map("full_name")
+  passwordHash String        @map("password_hash")
+  createdAt    DateTime      @default(now()) @map("created_at")
 
   projects     VideoProject[]
 
@@ -21,21 +22,21 @@ model User {
 }
 
 model VideoProject {
-  id             String            @id @default(uuid()) @db.Uuid
-  userId         String            @db.Uuid @map("user_id")
-  title          String            @db.VarChar(255)
-  storyTopic     String?           @db.Text @map("story_topic")
-  characterDescription String?      @db.Text @map("character_description")
-  script         String?           @db.Text
-  contentTone    String?           @db.VarChar(100) @map("content_tone")
-  videoGenre     String?           @db.VarChar(100) @map("video_genre")
+  id             String            @id @default(uuid())
+  userId         String            @map("user_id")
+  title          String
+  storyTopic     String?           @map("story_topic")
+  characterDescription String?      @map("character_description")
+  script         String?
+  contentTone    String?           @map("content_tone")
+  videoGenre     String?           @map("video_genre")
   numberOfScenes Int?              @map("number_of_scenes")
-  status         String?           @db.VarChar(20)
+  status         String?
   videoConfig    Json?             @map("video_config")
   imageConfig    Json?             @map("image_config")
   audioConfig    Json?             @map("audio_config")
-  createdAt      DateTime          @default(now()) @db.Timestamptz(6) @map("created_at")
-  updatedAt      DateTime          @default(now()) @updatedAt @db.Timestamptz(6) @map("updated_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @default(now()) @updatedAt @map("updated_at")
 
   user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   generations    VideoGeneration[]
@@ -45,18 +46,18 @@ model VideoProject {
 }
 
 model VideoGeneration {
-  id              String        @id @default(uuid()) @db.Uuid
-  projectId       String        @db.Uuid @map("project_id")
+  id              String        @id @default(uuid())
+  projectId       String        @map("project_id")
   generationNo    Int           @map("generation_no")
-  aiModel         String?       @db.VarChar(50) @map("ai_model")
-  resolution      String?       @db.VarChar(20)
-  aspectRatio     String?       @db.VarChar(10) @map("aspect_ratio")
+  aiModel         String?       @map("ai_model")
+  resolution      String?
+  aspectRatio     String?       @map("aspect_ratio")
   voiceSettings   Json?         @map("voice_settings")
-  status          String?       @db.VarChar(20)
-  outputUrl       String?       @db.Text @map("output_url")
-  thumbnailUrl    String?       @db.Text @map("thumbnail_url")
+  status          String?
+  outputUrl       String?       @map("output_url")
+  thumbnailUrl    String?       @map("thumbnail_url")
   durationSeconds Int?          @map("duration_seconds")
-  createdAt       DateTime      @default(now()) @db.Timestamptz(6) @map("created_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
 
   project         VideoProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   scenes          VideoScene[]
@@ -67,12 +68,12 @@ model VideoGeneration {
 }
 
 model VideoScene {
-  id           String          @id @default(uuid()) @db.Uuid
-  generationId String          @db.Uuid @map("generation_id")
+  id           String          @id @default(uuid())
+  generationId String          @map("generation_id")
   sceneOrder   Int             @map("scene_order")
-  promptText   String?         @db.Text @map("prompt_text")
-  imageUrl     String?         @db.Text @map("image_url")
-  audioUrl     String?         @db.Text @map("audio_url")
+  promptText   String?         @map("prompt_text")
+  imageUrl     String?         @map("image_url")
+  audioUrl     String?         @map("audio_url")
 
   generation   VideoGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
 

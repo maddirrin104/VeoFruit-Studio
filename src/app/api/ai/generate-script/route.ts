@@ -21,10 +21,23 @@ interface GenerateScriptRequest {
   brandBackgroundImageSource?: "upload" | "url";
 }
 
-const TARGET_SCRIPT_CHARS = 1500;
-const MIN_SCRIPT_CHARS = 1200;
-const MAX_SCRIPT_CHARS = 1700;
+const CHARS_PER_SCENE = 500;
+const MIN_CHARS_PER_SCENE = 400;
+const MAX_CHARS_PER_SCENE = 600;
+const BASE_SCENE_COUNT = 3;
+const MIN_TARGET_DURATION_SECONDS = 60;
+const MAX_TARGET_DURATION_SECONDS = 90;
 const GEMINI_MAX_RETRIES = 3;
+
+function getScriptCharLimits(sceneCount: number) {
+  const n = Math.max(BASE_SCENE_COUNT, sceneCount);
+  return {
+    target: n * CHARS_PER_SCENE,
+    min: n * MIN_CHARS_PER_SCENE,
+    max: n * MAX_CHARS_PER_SCENE,
+    maxOutputTokens: Math.min(8192, Math.max(2048, n * 700)),
+  };
+}
 
 type FruitProfile = {
   label: string;
@@ -176,6 +189,9 @@ export async function POST(request: NextRequest) {
       ? await loadReferenceImagePart(request, brandBackgroundImageUrl)
       : undefined;
 
+    const requestedScenes = Math.max(2, Math.min(18, numberOfScenes));
+    const charLimits = getScriptCharLimits(requestedScenes);
+
     const prompt = buildGeminiScriptPrompt({
       topic,
       characterDescription: resolvedCharacterDescription,
@@ -184,7 +200,10 @@ export async function POST(request: NextRequest) {
       voiceType,
       videoGenre,
       contentTone,
-      numberOfScenes,
+      numberOfScenes: requestedScenes,
+      targetChars: charLimits.target,
+      minChars: charLimits.min,
+      maxChars: charLimits.max,
       referenceImageName,
       referenceImageSource,
       hasReferenceImage: Boolean(productImagePart),
@@ -199,6 +218,11 @@ export async function POST(request: NextRequest) {
       "Không được viết ngắn cụt.",
       "Phải tạo kịch bản đủ dài, có cấu trúc rõ ràng theo từng cảnh.",
       "Mỗi cảnh cần có mô tả hình ảnh và lời thoại đầy đủ.",
+      "Chuyển chủ đề/nội dung đầu vào thành kịch bản video ngắn dễ quay.",
+      "Hook trong 3 giây đầu phải gây tò mò.",
+      "Nội dung chính mạch lạc, chia thành các đoạn ngắn dễ đọc.",
+      "Cảnh cuối phải có CTA rõ ràng.",
+      `Thời lượng tổng phải nằm trong ${MIN_TARGET_DURATION_SECONDS}-${MAX_TARGET_DURATION_SECONDS} giây, phù hợp TikTok/Reels/Shorts.`,
       "Chỉ trả về kịch bản, không giải thích.",
     ].join(" ");
 
@@ -229,7 +253,6 @@ export async function POST(request: NextRequest) {
         }]
       : `${instructionBlock}\n\n${prompt}`;
 
-    const requestedScenes = Math.max(2, Math.min(6, numberOfScenes));
     let script = "";
     let warningMessage: string | undefined;
     let scriptSource: "gemini" | "fallback" = "gemini";
@@ -241,7 +264,7 @@ export async function POST(request: NextRequest) {
         config: {
           temperature: 0.55,
           topP: 0.95,
-          maxOutputTokens: 2048,
+          maxOutputTokens: charLimits.maxOutputTokens,
         },
       });
 
@@ -278,7 +301,10 @@ export async function POST(request: NextRequest) {
         `- Viết đúng ${requestedScenes} cảnh, đánh số chính xác từ SCENE 1 đến SCENE ${requestedScenes}.`,
         "- Mỗi cảnh đều phải có đủ 2 mục: Cảnh quay và Lời thoại.",
         "- Không được dừng giữa câu, không được trả về bản nháp ngắn.",
-        `- Tổng độ dài toàn kịch bản khoảng ${TARGET_SCRIPT_CHARS} ký tự (dao động ${MIN_SCRIPT_CHARS}-${MAX_SCRIPT_CHARS} ký tự).`,
+        "- Cảnh đầu bắt buộc là hook 3 giây gây tò mò.",
+        "- Cảnh cuối bắt buộc có CTA rõ ràng.",
+        `- Tổng thời lượng phải nằm trong ${MIN_TARGET_DURATION_SECONDS}-${MAX_TARGET_DURATION_SECONDS} giây (TikTok/Reels/Shorts).`,
+        `- Tổng độ dài toàn kịch bản khoảng ${charLimits.target} ký tự (dao động ${charLimits.min}-${charLimits.max} ký tự).`,
         "- Chỉ trả về kịch bản hoàn chỉnh.",
         "",
         "Bản nháp chưa đạt (hãy viết lại đầy đủ):",
@@ -292,7 +318,7 @@ export async function POST(request: NextRequest) {
           config: {
             temperature: 0.45,
             topP: 0.9,
-            maxOutputTokens: 2048,
+            maxOutputTokens: charLimits.maxOutputTokens,
           },
         });
 
@@ -328,12 +354,12 @@ export async function POST(request: NextRequest) {
     }
 
     script = ensureCompleteEnding(script);
-    script = fitScriptLength(script, TARGET_SCRIPT_CHARS, MIN_SCRIPT_CHARS, MAX_SCRIPT_CHARS);
+    script = fitScriptLength(script, charLimits.target, charLimits.min, charLimits.max);
 
     return NextResponse.json({
       data: {
         script,
-        estimatedDuration: `${Math.min(numberOfScenes * 6, 72)} seconds`,
+        estimatedDuration: `${MIN_TARGET_DURATION_SECONDS}-${MAX_TARGET_DURATION_SECONDS} seconds`,
         sceneCount: numberOfScenes,
         warning: warningMessage,
         source: scriptSource,
@@ -471,6 +497,9 @@ function buildGeminiScriptPrompt(input: {
   videoGenre: string;
   contentTone: string;
   numberOfScenes: number;
+  targetChars: number;
+  minChars: number;
+  maxChars: number;
   referenceImageName?: string;
   referenceImageSource?: "upload" | "url";
   hasReferenceImage: boolean;
@@ -533,7 +562,9 @@ function buildGeminiScriptPrompt(input: {
     "",
     "Yêu cầu đầu ra:",
     "- Viết bằng tiếng Việt tự nhiên, phù hợp video ngắn bán trái cây.",
+    "- Biến chủ đề/nội dung đầu vào thành kịch bản video, không viết kiểu ghi chú rời rạc.",
     "- Ưu tiên kịch bản theo cấu trúc bán hàng: Hook mở đầu mạnh -> giới thiệu sản phẩm -> nêu lợi ích/điểm khác biệt -> chốt CTA.",
+    "- Bắt buộc có hook trong 3 giây đầu (câu mở đầu gây tò mò, kéo người xem ở lại).",
     "- Nhấn các yếu tố giúp bán hàng: độ tươi, màu sắc, độ mọng, độ ngọt, nguồn gốc, độ đẹp mắt khi lên hình, cảm giác đáng mua.",
     "- Tránh lặp cùng một mô tả 'tươi ngon, mọng nước, bắt mắt' cho mọi cảnh; mỗi cảnh phải dùng một góc cảm quan khác nhau phù hợp với đúng loại trái cây.",
     "- Nếu ảnh tham chiếu là trái cây cụ thể, phải giữ đúng loại trái cây đó làm trung tâm nội dung.",
@@ -544,10 +575,12 @@ function buildGeminiScriptPrompt(input: {
     "- Cảnh đầu: hook mạnh và giới thiệu sản phẩm.",
     "- Cảnh giữa: mô tả đặc điểm trái cây, lợi ích, cảm giác mua hàng.",
     "- Cảnh cuối: chốt CTA rõ ràng, khuyến khích mua hoặc ghé cửa hàng.",
+    `- Tổng thời lượng mục tiêu: ${MIN_TARGET_DURATION_SECONDS}-${MAX_TARGET_DURATION_SECONDS} giây, phù hợp TikTok/Reels/Shorts.`,
+    "- Chia nội dung thành từng đoạn ngắn; mỗi đoạn thoại 1-2 câu ngắn, nhịp đọc tự nhiên, dễ thu âm.",
     "- Chia rõ thành từng cảnh theo format:",
     "  SCENE 1",
     "  Cảnh quay: [mô tả cảnh quay bằng tiếng Việt, ngắn gọn, rõ hành động, góc máy, ánh sáng, bối cảnh]",
-    "  Lời thoại: [lời thoại tiếng Việt]",
+    "  Lời thoại: [các câu thoại ngắn, tách đoạn rõ ràng, dễ đọc trong video ngắn]",
     "- Toàn bộ đầu ra phải là tiếng Việt, bao gồm cả Cảnh quay và Lời thoại.",
     "- Mỗi cảnh nên ngắn, dễ đọc, dễ thu âm, nhịp nói tự nhiên.",
     input.hasReferenceImage && input.hasBrandBackgroundImage
@@ -555,7 +588,7 @@ function buildGeminiScriptPrompt(input: {
       : "- Nếu có ảnh tham chiếu, kịch bản phải bám theo ảnh và không đi lệch quá xa nội dung ảnh.",
     "- Không viết phần giải thích, chỉ trả về kịch bản hoàn chỉnh.",
     "- Đảm bảo câu chữ phù hợp để dùng ngay cho tạo video.",
-    `- Tổng độ dài toàn kịch bản khoảng ${TARGET_SCRIPT_CHARS} ký tự (dao động ${MIN_SCRIPT_CHARS}-${MAX_SCRIPT_CHARS} ký tự).`,
+    `- Tổng độ dài toàn kịch bản khoảng ${input.targetChars} ký tự (dao động ${input.minChars}-${input.maxChars} ký tự).`,
     "- Không được cắt dở câu ở cuối; câu cuối phải hoàn chỉnh.",
   ]
     .filter(Boolean)
@@ -708,14 +741,14 @@ function buildDeterministicSceneFallback(input: {
     let voiceover = "";
 
     if (isFirst) {
-      visualPrompt = `Toàn cảnh ${input.sceneLocation}, quầy trái cây rực rỡ ánh sáng, máy quay tiến gần đến ${input.characterType} đang cầm ${fruitProfile.label} với ${fruitProfile.visualCue}.`;
-      voiceover = `Xin chào bạn, hôm nay tại ${input.sceneLocation}, chúng tôi giới thiệu ${fruitProfile.label} với ${fruitProfile.sensory}. Nếu bạn đang tìm loại trái cây dễ ăn, dễ dùng cho gia đình thì đây là lựa chọn rất đáng thử.`;
+      visualPrompt = `0-3 giây đầu: Toàn cảnh ${input.sceneLocation}, máy quay lao nhanh vào quầy, dừng ở tay ${input.characterType} đang cầm ${fruitProfile.label} với ${fruitProfile.visualCue}.`;
+      voiceover = `Bạn có bao giờ mua ${fruitProfile.label} mà nhìn đẹp nhưng ăn không như kỳ vọng chưa? Ngay 3 giây đầu này, tôi sẽ chỉ bạn dấu hiệu nhận biết trái thật sự đáng mua tại ${input.sceneLocation}.`;
     } else if (isLast) {
-      visualPrompt = `Cận cảnh ${fruitProfile.label} được đóng gói sạch đẹp tại ${input.sceneLocation}, nhân vật mỉm cười chào và chỉ vào quầy hàng.`;
-      voiceover = `${fruitProfile.label} hiện có sẵn tại ${input.sceneLocation} với chất lượng tuyển chọn mỗi ngày. Ghé cửa hàng để được tư vấn loại phù hợp nhu cầu và chọn ngay những phần trái cây ngon, đẹp mắt và đáng mua nhất.`;
+      visualPrompt = `Cận cảnh ${fruitProfile.label} được đóng gói sạch đẹp tại ${input.sceneLocation}, nhân vật mỉm cười chào và chỉ vào quầy hàng cùng thông tin liên hệ.`;
+      voiceover = `Nếu bạn muốn chọn ${fruitProfile.label} đúng chuẩn, hãy ghé ${input.sceneLocation} hoặc nhắn ngay cho cửa hàng để được tư vấn nhanh. Chốt đơn hôm nay để nhận trái tươi, đều vị và lên hình đẹp đúng như bạn mong đợi.`;
     } else {
-      visualPrompt = `Các góc quay cận cảnh ${fruitProfile.label}: màu sắc, độ căng mọng, ${fruitProfile.visualCue}; xen kẽ cảnh ${input.characterType} tư vấn trực tiếp tại quầy.`;
-      voiceover = `${fruitProfile.label} có ${fruitProfile.sensory}, rất phù hợp để ${fruitProfile.usage}. Chúng tôi ưu tiên chọn trái đều màu, tươi mới để bạn yên tâm khi mua và sử dụng.`;
+      visualPrompt = `Các góc quay ngắn 3-5 giây: cận cảnh ${fruitProfile.label} với màu sắc, độ căng mọng, ${fruitProfile.visualCue}; xen kẽ cảnh ${input.characterType} tư vấn trực tiếp tại quầy.`;
+      voiceover = `${fruitProfile.label} có ${fruitProfile.sensory}. Loại này rất hợp để ${fruitProfile.usage}. Mỗi lô hàng đều được chọn theo tiêu chí rõ ràng để bạn mua nhanh mà vẫn yên tâm chất lượng.`;
     }
 
     scenes.push(

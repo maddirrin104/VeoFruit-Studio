@@ -5,11 +5,13 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "next dev --hostname localhost --port 3200",
+    "prebuild": "node scripts/prisma-prebuild.js",
     "build": "prisma generate && next build",
+    "postbuild": "node scripts/prisma-postbuild.js",
     "start": "next start",
     "lint": "eslint",
     "desktop:dev": "electron .",
-    "desktop:build": "npm run build && electron-builder --win --x64 --publish never",
+    "desktop:build": "npm run build && node scripts/desktop-build.js",
     "desktop:dist": "npm run desktop:build"
   },
   "dependencies": {
@@ -41,28 +43,48 @@
   "build": {
     "appId": "com.veofruit.studio",
     "productName": "VeoFruit Studio",
-    "asar": false,
+    "icon": "public/app-icon.png",
+    "asar": true,
+    "compression": "maximum",
     "directories": {
       "output": "dist-electron"
     },
     "files": [
       "electron/**/*",
       ".next/**/*",
+      "src/generated/prisma/**/*",
       "public/**/*",
-      "src/**/*",
       "prisma/**/*",
       "node_modules/**/*",
       "package.json",
       "next.config.mjs",
-      "prisma.config.ts"
+      "prisma.config.ts",
+      "!.next/dev/**",
+      "!.next/cache/**",
+      "!.next/types/**",
+      "!public/uploads/**",
+      "!public/generated-audio/**",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      { "from": "public/app-icon.png", "to": "app-icon.png" }
     ],
     "asarUnpack": [
       "node_modules/@prisma/**/*",
-      "node_modules/ffmpeg-static/**/*"
+      "node_modules/ffmpeg-static/**/*",
+      "src/generated/prisma/**/*"
     ],
     "win": {
       "target": ["nsis"],
+      "icon": "public/app-icon.png",
       "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "VeoFruit Studio"
     }
   },
   "overrides": {

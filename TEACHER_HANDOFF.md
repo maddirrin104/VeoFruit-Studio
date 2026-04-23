@@ -3,16 +3,14 @@
 Tai lieu nay de Thay chi can lam dung thu tu la app chay duoc.
 
 ## 1) BO FILE CAN GUI CHO THAY
-Gui dung 3 file sau:
+Gui 2 file sau la du:
 - dist-electron/VeoFruit Studio Setup 0.1.0.exe
-- database_setup.sql
 - TEACHER_HANDOFF.md
 
-Khuyen nghi: nen 3 file thanh 1 file zip de gui gon.
+Khuyen nghi: nen 2 file thanh 1 file zip de gui gon.
 
 ## 2) YEU CAU MAY TEST
 - Windows 10/11
-- Da cai PostgreSQL (local hoac cloud)
 - Co Internet de goi API Google, Runway, FPT
 
 ## 3) CAI APP DESKTOP
@@ -22,39 +20,27 @@ Khuyen nghi: nen 3 file thanh 1 file zip de gui gon.
 
 Luu y:
 - Ban desktop nay tu dong chay local server o cong 3200.
+- Frontend + backend da duoc dong goi trong bo cai Electron (khong can cai Node de chay app sau khi setup).
+- Runtime Windows can thiet da di kem trong bo cai (co cac DLL cua Electron nhu ffmpeg.dll, libEGL.dll, vulkan-1.dll...).
 
-## 4) SETUP DATABASE (BAT BUOC, CHI 1 LAN)
-Neu bo qua buoc nay, app se loi khi tao Project/Generation.
+## 4) DATABASE LOCAL TU DONG (KHONG CAN SETUP SQL RIENG)
+App se tu dong tao local SQLite database trong may nguoi dung o lan mo dau.
 
-### Cach setup nhanh voi PostgreSQL local
-1. Mo pgAdmin (hoac DBeaver, DataGrip, psql)
-2. Tao database moi, vi du: veofruit_studio
-3. Mo Query Tool cua database vua tao
-4. Copy toan bo noi dung file database_setup.sql va chay
-5. Kiem tra da co cac bang:
-   - users
-   - video_projects
-   - video_generations
-   - video_scenes
+Duong dan mac dinh:
+- %USERPROFILE%/.veofruit-studio/data/veofruit.db
 
-### Mau DATABASE_URL
-- Local:
-  - postgresql://postgres:YOUR_PASSWORD@localhost:5432/veofruit_studio?schema=public
-- Cloud (Supabase/Neon/Railway...):
-  - dung connection string do nha cung cap cap
-
-Luu y quan trong:
-- Neu password co ky tu dac biet, phai URL encode (vi du @ -> %40).
-- DATABASE_URL sai thi app khong doc/ghi du lieu duoc.
+Thay khong can cai PostgreSQL, khong can chay database_setup.sql.
 
 ## 5) NHAP SETTINGS API TRONG APP
 Vao phan Settings API, nhap cac truong sau.
 
 ### Truong bat buoc de chay day du tinh nang
-- DATABASE_URL
 - Google API Key (Gemini/Veo)
 - Runway API Secret
 - FPT AI API Key
+
+Ghi chu:
+- DATABASE_URL la tuy chon. De trong thi app tu dung local DB mac dinh.
 
 ### Truong thuong giu mac dinh (khong can sua)
 - Runway Base URL: https://api.dev.runwayml.com
@@ -66,6 +52,11 @@ Vao phan Settings API, nhap cac truong sau.
 ### PUBLIC_APP_URL (chi can khi can URL cong khai)
 - Neu Thay chi test app tren 1 may: co the de trong
 - Neu can URL cong khai tam thoi: dung ngrok (xem muc 9)
+
+### Luu y image-to-video (ban cap nhat moi)
+- Khi upload anh, app luu file vat ly vao thu muc du an: public/uploads/
+- Luong image-to-video da ho tro duong dan local noi bo (vi du /api/files/uploads/...), khong bat buoc URL https cong khai
+- Co the tao video tu 1 anh hoac 2 anh (product + brand) tren app desktop ma khong can ngrok
 
 Sau khi nhap xong:
 1. Bam Luu Settings
@@ -88,7 +79,7 @@ Sau khi nhap xong:
 
 ## 7) CACH TEST NHANH CHO THAY (3-5 PHUT)
 1. Mo app
-2. Vao Settings API, dien key + DATABASE_URL, bam Luu Settings
+2. Vao Settings API, dien 3 key API, bam Luu Settings
 3. Nhap noi dung co ban cho form
 4. Bam Luu nhap
 5. Bam Danh sach nhap, thu:
@@ -103,13 +94,13 @@ Neu cac buoc tren chay duoc, bai dat yeu cau.
 ### Loi: Unexpected token 'I', "Internal S"... is not valid JSON
 Y nghia: backend tra loi text Internal Server Error thay vi JSON.
 Thuong do:
-- Chua setup database
-- DATABASE_URL sai
+- Chua luu API key dung
+- Local DB chua khoi tao xong o lan dau
 
 Cach xu ly:
-1. Kiem tra da chay database_setup.sql chua
-2. Kiem tra lai DATABASE_URL trong Settings API
-3. Bam Luu Settings, mo lai app
+1. Bam Luu Settings
+2. Dong app va mo lai app
+3. Thu lai thao tac
 
 ### Loi lien quan du lieu draft/project
 Cach xu ly:

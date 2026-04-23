@@ -16,7 +16,7 @@ import {
   mixBackgroundMusic,
   optimizeVoiceOverAudio,
 } from "@/lib/audio-postprocess";
-import { buildFilesApiPath, getPublicPath } from "@/lib/runtime-path";
+import { buildFilesApiPath, getRuntimeMediaPath } from "@/lib/runtime-path";
 import { ensurePlayableMp3Buffer } from "@/lib/audio-validation";
 
 interface GenerateAudioRequest {
@@ -44,7 +44,7 @@ interface AudioGenerationResult {
   estimatedDurationSeconds: number;
 }
 
-const AUDIO_OUTPUT_DIR = getPublicPath("generated-audio");
+const AUDIO_OUTPUT_DIR = getRuntimeMediaPath("generated-audio");
 
 async function persistAudio(buffer: Buffer, fileName: string): Promise<string> {
   await fs.mkdir(AUDIO_OUTPUT_DIR, { recursive: true });

@@ -37,17 +37,6 @@ export function RuntimeSettingsSection({
 
       <div className="space-y-5">
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2 md:col-span-2">
-            <FieldLabel>DATABASE_URL (PostgreSQL)</FieldLabel>
-            <TextInput
-              value={settings.databaseUrl || ""}
-              placeholder="postgresql://postgres:password@localhost:5432/veofruit_studio?schema=public"
-              onChange={(event) => onChange({ databaseUrl: event.target.value })}
-            />
-            <p className="text-xs text-[#5d8e77]">
-              Bat buoc neu can luu/tao project va generation.
-            </p>
-          </div>
           <div className="space-y-2">
             <FieldLabel>Google API Key (Veo3/Gemini)</FieldLabel>
             <TextInput
@@ -85,6 +74,29 @@ export function RuntimeSettingsSection({
               placeholder="https://api.fpt.ai/hmi/tts/v5"
               onChange={(event) => onChange({ fptTtsUrl: event.target.value })}
             />
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <FieldLabel>Kling Access Key ID</FieldLabel>
+            <TextInput
+              value={settings.klingAccessKeyId || ""}
+              placeholder="Kling Access Key ID"
+              onChange={(event) => onChange({ klingAccessKeyId: event.target.value })}
+            />
+          </div>
+          <div className="space-y-2">
+            <FieldLabel>Kling Access Key Secret</FieldLabel>
+            <TextInput
+              type="password"
+              value={settings.klingAccessKeySecret || ""}
+              placeholder="Kling Access Key Secret"
+              onChange={(event) => onChange({ klingAccessKeySecret: event.target.value })}
+            />
+            <p className="text-xs text-[#5d8e77]">
+              Lay tu https://console.klingai.com — can ca Access Key ID va Secret Key.
+            </p>
           </div>
         </div>
 

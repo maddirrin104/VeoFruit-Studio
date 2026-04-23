@@ -9,7 +9,7 @@ import {
   type VoiceType,
 } from "@/lib/fpt-tts";
 import { extractDialogueLinesFromScript } from "@/lib/audio-narration";
-import { buildFilesApiPath, getPublicPath } from "@/lib/runtime-path";
+import { buildFilesApiPath, getRuntimeMediaPath } from "@/lib/runtime-path";
 import { ensurePlayableMp3Buffer } from "@/lib/audio-validation";
 
 interface PreviewVoiceRequest {
@@ -24,8 +24,30 @@ interface PreviewVoiceRequest {
   };
 }
 
-const AUDIO_OUTPUT_DIR = getPublicPath("generated-audio");
+const AUDIO_OUTPUT_DIR = getRuntimeMediaPath("generated-audio");
 const PREVIEW_MAX_ATTEMPTS = 3;
+
+function isLikelyMp3Buffer(buffer: Buffer): boolean {
+  if (buffer.byteLength < 2048) {
+    return false;
+  }
+
+  const header = buffer.subarray(0, 3).toString("ascii");
+  if (header === "ID3") {
+    return true;
+  }
+
+  const inspectionLimit = Math.min(buffer.length - 1, 2048);
+  for (let index = 0; index < inspectionLimit; index += 1) {
+    const current = buffer[index];
+    const next = buffer[index + 1];
+    if (current === 0xff && (next & 0xe0) === 0xe0) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 function normalizeSpacing(text: string): string {
   return text.replace(/\s+/g, " ").trim();
@@ -150,11 +172,22 @@ export async function POST(request: NextRequest) {
           maxJobAttempts: 1,
         });
 
-        const checkedPreview = await ensurePlayableMp3Buffer(
-          voiceBuffer,
-          "Preview voice"
-        );
-        playablePreviewBuffer = checkedPreview.buffer;
+        try {
+          const checkedPreview = await ensurePlayableMp3Buffer(
+            voiceBuffer,
+            "Preview voice"
+          );
+          playablePreviewBuffer = checkedPreview.buffer;
+        } catch (validationError) {
+          // In packaged Electron runtime, ffmpeg probing may fail even if FPT returns
+          // a valid MP3. Keep preview available when the raw buffer still looks playable.
+          if (isLikelyMp3Buffer(voiceBuffer)) {
+            console.warn("[preview-voice] using raw FPT audio buffer after validation failure:", validationError);
+            playablePreviewBuffer = voiceBuffer;
+          } else {
+            throw validationError;
+          }
+        }
         break;
       } catch (error) {
         lastAttemptError = error;

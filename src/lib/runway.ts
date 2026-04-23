@@ -1,3 +1,7 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolvePublicPathFromRequestPath } from "@/lib/runtime-path";
 import { getRuntimeSettings } from "@/lib/runtime-settings";
 
 export class RunwayGenerationError extends Error {
@@ -154,29 +158,151 @@ function isLocalOnlyHostname(hostname: string): boolean {
   return false;
 }
 
-function resolvePromptImageUrl(promptImageUrl?: string): string | undefined {
-  const trimmed = promptImageUrl?.trim();
-  if (!trimmed) {
-    return undefined;
+function detectImageMimeType(filePathOrName: string): string {
+  const ext = path.extname(filePathOrName).toLowerCase();
+
+  switch (ext) {
+    case ".png":
+      return "image/png";
+    case ".webp":
+      return "image/webp";
+    case ".gif":
+      return "image/gif";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    default:
+      return "image/jpeg";
+  }
+}
+
+function isWindowsAbsolutePath(value: string): boolean {
+  return /^[a-zA-Z]:[\\/]/.test(value);
+}
+
+async function toImageDataUrl(filePath: string): Promise<string> {
+  try {
+    // Kiểm tra file tồn tại
+    await fs.access(filePath);
+  } catch {
+    throw new RunwayGenerationError(
+      `Ảnh không tìm thấy tại: ${filePath}`,
+      "API_ERROR",
+      false
+    );
   }
 
   try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-      console.warn("[Runway] Skip image-to-video because promptImage URL protocol is invalid:", trimmed);
-      return undefined;
-    }
-
-    if (isLocalOnlyHostname(parsed.hostname)) {
+    const stats = await fs.stat(filePath);
+    const MAX_IMAGE_SIZE = 50 * 1024 * 1024; // 50MB
+    
+    if (stats.size > MAX_IMAGE_SIZE) {
       throw new RunwayGenerationError(
-        "Ảnh tham chiếu đang ở localhost nên Runway không thể truy cập. Hãy cấu hình PUBLIC_APP_URL là domain public (hoặc dùng URL ảnh public) rồi thử lại.",
+        `Ảnh quá lớn (${(stats.size / 1024 / 1024).toFixed(2)}MB). Tối đa ${MAX_IMAGE_SIZE / 1024 / 1024}MB`,
         "API_ERROR",
         false
       );
     }
 
+    const buffer = await fs.readFile(filePath);
+    const mimeType = detectImageMimeType(filePath);
+    const dataUrl = `data:${mimeType};base64,${buffer.toString("base64")}`;
+    
+    console.log(`[Runway] Successfully converted image to data URL: ${path.basename(filePath)} (${(buffer.length / 1024).toFixed(2)}KB)`);
+    
+    return dataUrl;
+  } catch (error) {
+    if (error instanceof RunwayGenerationError) {
+      throw error;
+    }
+    throw new RunwayGenerationError(
+      `Lỗi đọc ảnh từ ${path.basename(filePath)}: ${(error as Error)?.message || "Unknown error"}`,
+      "API_ERROR",
+      false
+    );
+  }
+}
+
+async function tryResolveLocalPromptImagePath(rawUrlOrPath: string): Promise<string | undefined> {
+  const fromPublicPath = resolvePublicPathFromRequestPath(rawUrlOrPath);
+  if (fromPublicPath) {
+    console.log(`[Runway] Resolved /api/files path to local file: ${path.basename(fromPublicPath)}`);
+    return fromPublicPath;
+  }
+
+  if (isWindowsAbsolutePath(rawUrlOrPath) || path.isAbsolute(rawUrlOrPath)) {
+    console.log(`[Runway] Using absolute file path: ${path.basename(rawUrlOrPath)}`);
+    return rawUrlOrPath;
+  }
+
+  return undefined;
+}
+
+async function resolvePromptImageUrl(promptImageUrl?: string): Promise<string | undefined> {
+  const trimmed = promptImageUrl?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  console.log(`[Runway] Resolving prompt image URL: ${trimmed.substring(0, 100)}...`);
+
+  if (/^data:image\//i.test(trimmed)) {
+    console.log(`[Runway] Image already in data URL format`);
+    return trimmed;
+  }
+
+  const directLocalPath = await tryResolveLocalPromptImagePath(trimmed);
+  if (directLocalPath) {
+    try {
+      const dataUrl = await toImageDataUrl(directLocalPath);
+      console.log(`[Runway] ✅ Successfully prepared local image for image-to-video`);
+      return dataUrl;
+    } catch (error) {
+      if (error instanceof RunwayGenerationError) {
+        throw error;
+      }
+      throw new RunwayGenerationError(
+        `Không thể đọc ảnh local cho image-to-video: ${(error as Error)?.message || "Unknown error"}`,
+        "API_ERROR",
+        false
+      );
+    }
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+
+    if (parsed.protocol === "file:") {
+      console.log(`[Runway] Resolving file:// URL to local path`);
+      return await toImageDataUrl(fileURLToPath(parsed));
+    }
+
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      console.warn("[Runway] Skip image-to-video because promptImage protocol is invalid:", trimmed);
+      return undefined;
+    }
+
+    if (isLocalOnlyHostname(parsed.hostname)) {
+      console.log(`[Runway] Detected localhost URL, resolving local path from pathname`);
+      const localPath = await tryResolveLocalPromptImagePath(parsed.pathname);
+      if (!localPath) {
+        throw new RunwayGenerationError(
+          "Không thể ánh xạ URL ảnh local sang đường dẫn file trong thư mục dự án.",
+          "API_ERROR",
+          false
+        );
+      }
+
+      return await toImageDataUrl(localPath);
+    }
+
+    console.log(`[Runway] Using public HTTPS URL for image`);
     return parsed.toString();
-  } catch {
+  } catch (error) {
+    if (error instanceof RunwayGenerationError) {
+      throw error;
+    }
+
     console.warn("[Runway] Skip image-to-video because promptImage URL is invalid:", trimmed);
     return undefined;
   }
@@ -415,13 +541,14 @@ export async function generateVideoWithRunway(
   const model = request.model ?? "gen4.5";
   const duration = resolveDurationSeconds(request.durationSeconds);
   const promptText = normalizePromptText(request.prompt);
-  const promptImageUrl = resolvePromptImageUrl(request.promptImageUrl);
+  const promptImageUrl = await resolvePromptImageUrl(request.promptImageUrl);
 
   try {
     let task;
     let taskId = "";
 
     if (promptImageUrl) {
+      console.log(`[Runway] 🎬 Creating image-to-video task (${promptImageUrl.substring(0, 50)}...)`);
       try {
         taskId = await createImageToVideoTask({
           model,
@@ -430,13 +557,14 @@ export async function generateVideoWithRunway(
           duration,
           promptImageUrl,
         });
+        console.log(`[Runway] ✅ Image-to-video task created: ${taskId}`);
         task = await waitForRunwayTaskOutput(taskId, 10 * 60 * 1000);
       } catch (imageError) {
         if (!shouldFallbackToTextOnly(imageError)) {
           throw imageError;
         }
 
-        console.warn("[Runway] image-to-video failed; fallback to text-to-video:", imageError);
+        console.warn("[Runway] ⚠️ image-to-video failed; fallback to text-to-video:", (imageError as Error)?.message);
         taskId = await createTextToVideoTask({
           model,
           promptText,

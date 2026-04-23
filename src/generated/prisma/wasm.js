@@ -87,9 +87,6 @@ Prisma.NullTypes = {
  * Enums
  */
 exports.Prisma.TransactionIsolationLevel = makeStrictEnum({
-  ReadUncommitted: 'ReadUncommitted',
-  ReadCommitted: 'ReadCommitted',
-  RepeatableRead: 'RepeatableRead',
   Serializable: 'Serializable'
 });
 
@@ -153,15 +150,15 @@ exports.Prisma.NullableJsonNullValueInput = {
   JsonNull: Prisma.JsonNull
 };
 
-exports.Prisma.QueryMode = {
-  default: 'default',
-  insensitive: 'insensitive'
-};
-
 exports.Prisma.JsonNullValueFilter = {
   DbNull: Prisma.DbNull,
   JsonNull: Prisma.JsonNull,
   AnyNull: Prisma.AnyNull
+};
+
+exports.Prisma.QueryMode = {
+  default: 'default',
+  insensitive: 'insensitive'
 };
 
 exports.Prisma.NullsOrder = {
@@ -214,7 +211,7 @@ const config = {
   "datasourceNames": [
     "db"
   ],
-  "activeProvider": "postgresql",
+  "activeProvider": "sqlite",
   "postinstall": false,
   "inlineDatasources": {
     "db": {
@@ -224,8 +221,8 @@ const config = {
       }
     }
   },
-  "inlineSchema": "generator client {\n  provider = \"prisma-client-js\"\n  output   = \"../src/generated/prisma\"\n}\n\ndatasource db {\n  provider = \"postgresql\"\n  url      = env(\"DATABASE_URL\")\n}\n\nmodel User {\n  id           String   @id @default(uuid()) @db.Uuid\n  email        String   @unique @db.VarChar(255)\n  fullName     String   @map(\"full_name\") @db.VarChar(126)\n  passwordHash String   @map(\"password_hash\") @db.Text\n  createdAt    DateTime @default(now()) @map(\"created_at\") @db.Timestamptz(6)\n\n  projects VideoProject[]\n\n  @@map(\"users\")\n}\n\nmodel VideoProject {\n  id                   String   @id @default(uuid()) @db.Uuid\n  userId               String   @map(\"user_id\") @db.Uuid\n  title                String   @db.VarChar(255)\n  storyTopic           String?  @map(\"story_topic\") @db.Text\n  characterDescription String?  @map(\"character_description\") @db.Text\n  script               String?  @db.Text\n  contentTone          String?  @map(\"content_tone\") @db.VarChar(100)\n  videoGenre           String?  @map(\"video_genre\") @db.VarChar(100)\n  numberOfScenes       Int?     @map(\"number_of_scenes\")\n  status               String?  @db.VarChar(20)\n  videoConfig          Json?    @map(\"video_config\")\n  imageConfig          Json?    @map(\"image_config\")\n  audioConfig          Json?    @map(\"audio_config\")\n  createdAt            DateTime @default(now()) @map(\"created_at\") @db.Timestamptz(6)\n  updatedAt            DateTime @default(now()) @updatedAt @map(\"updated_at\") @db.Timestamptz(6)\n\n  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)\n  generations VideoGeneration[]\n\n  @@index([userId])\n  @@map(\"video_projects\")\n}\n\nmodel VideoGeneration {\n  id              String   @id @default(uuid()) @db.Uuid\n  projectId       String   @map(\"project_id\") @db.Uuid\n  generationNo    Int      @map(\"generation_no\")\n  aiModel         String?  @map(\"ai_model\") @db.VarChar(50)\n  resolution      String?  @db.VarChar(20)\n  aspectRatio     String?  @map(\"aspect_ratio\") @db.VarChar(10)\n  voiceSettings   Json?    @map(\"voice_settings\")\n  status          String?  @db.VarChar(20)\n  outputUrl       String?  @map(\"output_url\") @db.Text\n  thumbnailUrl    String?  @map(\"thumbnail_url\") @db.Text\n  durationSeconds Int?     @map(\"duration_seconds\")\n  createdAt       DateTime @default(now()) @map(\"created_at\") @db.Timestamptz(6)\n\n  project VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)\n  scenes  VideoScene[]\n\n  @@unique([projectId, generationNo])\n  @@index([projectId])\n  @@map(\"video_generations\")\n}\n\nmodel VideoScene {\n  id           String  @id @default(uuid()) @db.Uuid\n  generationId String  @map(\"generation_id\") @db.Uuid\n  sceneOrder   Int     @map(\"scene_order\")\n  promptText   String? @map(\"prompt_text\") @db.Text\n  imageUrl     String? @map(\"image_url\") @db.Text\n  audioUrl     String? @map(\"audio_url\") @db.Text\n\n  generation VideoGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)\n\n  @@unique([generationId, sceneOrder])\n  @@index([generationId])\n  @@map(\"video_scenes\")\n}\n",
-  "inlineSchemaHash": "cedb309b3e50726109b321aaee45271e9eb3e52e67d1da6fe5b9be93b4067bb3",
+  "inlineSchema": "generator client {\n  provider   = \"prisma-client-js\"\n  output     = \"../src/generated/prisma\"\n  engineType = \"wasm\"\n}\n\ndatasource db {\n  provider = \"sqlite\"\n  url      = env(\"DATABASE_URL\")\n}\n\nmodel User {\n  id           String   @id @default(uuid())\n  email        String   @unique\n  fullName     String   @map(\"full_name\")\n  passwordHash String   @map(\"password_hash\")\n  createdAt    DateTime @default(now()) @map(\"created_at\")\n\n  projects VideoProject[]\n\n  @@map(\"users\")\n}\n\nmodel VideoProject {\n  id                   String   @id @default(uuid())\n  userId               String   @map(\"user_id\")\n  title                String\n  storyTopic           String?  @map(\"story_topic\")\n  characterDescription String?  @map(\"character_description\")\n  script               String?\n  contentTone          String?  @map(\"content_tone\")\n  videoGenre           String?  @map(\"video_genre\")\n  numberOfScenes       Int?     @map(\"number_of_scenes\")\n  status               String?\n  videoConfig          Json?    @map(\"video_config\")\n  imageConfig          Json?    @map(\"image_config\")\n  audioConfig          Json?    @map(\"audio_config\")\n  createdAt            DateTime @default(now()) @map(\"created_at\")\n  updatedAt            DateTime @default(now()) @updatedAt @map(\"updated_at\")\n\n  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)\n  generations VideoGeneration[]\n\n  @@index([userId])\n  @@map(\"video_projects\")\n}\n\nmodel VideoGeneration {\n  id              String   @id @default(uuid())\n  projectId       String   @map(\"project_id\")\n  generationNo    Int      @map(\"generation_no\")\n  aiModel         String?  @map(\"ai_model\")\n  resolution      String?\n  aspectRatio     String?  @map(\"aspect_ratio\")\n  voiceSettings   Json?    @map(\"voice_settings\")\n  status          String?\n  outputUrl       String?  @map(\"output_url\")\n  thumbnailUrl    String?  @map(\"thumbnail_url\")\n  durationSeconds Int?     @map(\"duration_seconds\")\n  createdAt       DateTime @default(now()) @map(\"created_at\")\n\n  project VideoProject @relation(fields: [projectId], references: [id], onDelete: Cascade)\n  scenes  VideoScene[]\n\n  @@unique([projectId, generationNo])\n  @@index([projectId])\n  @@map(\"video_generations\")\n}\n\nmodel VideoScene {\n  id           String  @id @default(uuid())\n  generationId String  @map(\"generation_id\")\n  sceneOrder   Int     @map(\"scene_order\")\n  promptText   String? @map(\"prompt_text\")\n  imageUrl     String? @map(\"image_url\")\n  audioUrl     String? @map(\"audio_url\")\n\n  generation VideoGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)\n\n  @@unique([generationId, sceneOrder])\n  @@index([generationId])\n  @@map(\"video_scenes\")\n}\n",
+  "inlineSchemaHash": "703cf695bb36152280be1551e9cf8772c557c05a56a66816bf3700e846ad6c2f",
   "copyEngine": true
 }
 config.dirname = '/'

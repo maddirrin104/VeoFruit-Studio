@@ -5,8 +5,10 @@ import { Card } from "@/components/ui/Card";
 import { OptionButton } from "@/components/ui/OptionButton";
 import { SelectField } from "@/components/ui/FormControls";
 import { SectionHeading } from "@/components/ui/SectionHeading";
+import type { WorkflowMode } from "@/types/studio";
 
 type VideoConfigSectionProps = {
+  workflowMode: WorkflowMode;
   resolution: "720p" | "1080p";
   aiModel: string;
   aspectRatio: "9:16" | "1:1" | "16:9" | "4:5";
@@ -14,6 +16,13 @@ type VideoConfigSectionProps = {
   onResolutionChange: (value: "720p" | "1080p") => void;
   onAspectRatioChange: (value: "9:16" | "1:1" | "16:9" | "4:5") => void;
   onDurationSecondsChange: (value: number) => void;
+};
+
+const PROVIDER_INFO: Record<WorkflowMode, { label: string; model: string; note: string }> = {
+  "runway-manual":    { label: "RunwayML",    model: "Gen 4.5",                    note: "Runway Gen-4.5 — clip tối đa 10 giây" },
+  "runway-ai-script": { label: "RunwayML",    model: "Gen 4.5",                    note: "Runway Gen-4.5 — clip tối đa 10 giây" },
+  "veo3-direct":      { label: "Google Veo3", model: "Veo 3.1 Generate Preview",   note: "Veo3 trực tiếp — cần Google API key có quyền Veo3" },
+  "kling-ai-script":  { label: "Kling AI",    model: "Kling V2.6",                 note: "Kling V2.6 — hỗ trợ 5-10 giây mỗi clip" },
 };
 
 function FieldLabel({ children }: { children: string }) {
@@ -25,6 +34,7 @@ function FieldLabel({ children }: { children: string }) {
 }
 
 export function VideoConfigSection({
+  workflowMode,
   resolution,
   aiModel,
   aspectRatio,
@@ -34,65 +44,58 @@ export function VideoConfigSection({
   onDurationSecondsChange,
 }: VideoConfigSectionProps) {
   const durationOptions: Array<{ label: string; value: number }> = [
-    { label: "10s", value: 10 },
+    { label: "15s", value: 15 },
     { label: "30s", value: 30 },
     { label: "60s", value: 60 },
-    { label: "3p", value: 180 },
+    { label: "90s", value: 90 },
+    { label: "3p",  value: 180 },
   ];
 
+  const clipsNeeded = durationSeconds > 10 ? Math.ceil(durationSeconds / 10) : 1;
+  const multiClipHint =
+    clipsNeeded > 1
+      ? `Sẽ tạo ${clipsNeeded} clip 10s ghép thành video ${durationSeconds}s — khuyến nghị đặt số cảnh = ${clipsNeeded}.`
+      : null;
+
   const selectedDurationLabel =
-    durationOptions.find((option) => option.value === durationSeconds)?.label ??
+    durationOptions.find((opt) => opt.value === durationSeconds)?.label ??
     `${durationSeconds}s`;
 
-  const aspectRatioOptions: Array<{
-    ratio: "9:16" | "1:1" | "16:9" | "4:5";
-    label: string;
-  }> = [
+  const aspectRatioOptions: Array<{ ratio: "9:16" | "1:1" | "16:9" | "4:5"; label: string }> = [
     { ratio: "9:16", label: "9:16 - TikTok, Reels, Shorts" },
-    { ratio: "1:1", label: "1:1 - Instagram Feed, Facebook Post" },
+    { ratio: "1:1",  label: "1:1 - Instagram Feed, Facebook Post" },
     { ratio: "16:9", label: "16:9 - YouTube, TV, Website" },
-    { ratio: "4:5", label: "4:5 - Instagram Feed (chiem dien tich lon)" },
+    { ratio: "4:5",  label: "4:5 - Instagram Feed (chiếm diện tích lớn)" },
   ];
 
   const selectedAspectRatioLabel =
-    aspectRatioOptions.find((option) => option.ratio === aspectRatio)?.label ??
-    aspectRatio;
+    aspectRatioOptions.find((opt) => opt.ratio === aspectRatio)?.label ?? aspectRatio;
+
+  const providerInfo = PROVIDER_INFO[workflowMode];
 
   return (
     <Card className="p-6 md:p-7">
-      <SectionHeading
-        title="Cấu hình video"
-        icon={<Settings2 className="size-5" />}
-      />
+      <SectionHeading title="Cấu hình video" icon={<Settings2 className="size-5" />} />
 
       <div className="space-y-5">
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-3">
             <FieldLabel>Độ phân giải</FieldLabel>
             <div className="grid grid-cols-2 gap-2">
-              <OptionButton
-                label="720p"
-                active={resolution === "720p"}
-                onClick={() => onResolutionChange("720p")}
-              />
-              <OptionButton
-                label="1080p"
-                active={resolution === "1080p"}
-                onClick={() => onResolutionChange("1080p")}
-              />
+              <OptionButton label="720p"  active={resolution === "720p"}  onClick={() => onResolutionChange("720p")} />
+              <OptionButton label="1080p" active={resolution === "1080p"} onClick={() => onResolutionChange("1080p")} />
             </div>
           </div>
 
           <div className="space-y-3">
-            <FieldLabel>AI Model</FieldLabel>
+            <FieldLabel>Video Provider</FieldLabel>
             <div className="rounded-xl border border-[#a8dfbf] bg-[#eaf8f0] px-4 py-3">
               <p className="flex items-center gap-2 text-sm font-semibold text-[#12995a]">
                 <span className="h-2 w-2 rounded-full bg-[#10b862]" />
-                {aiModel}
+                {providerInfo.label}
               </p>
-              <p className="mt-1 text-xs text-[#6d9984]">
-                Runway Gen-4.5 - thời lượng hỗ trợ 2-10 giây
-              </p>
+              <p className="mt-0.5 text-xs font-medium text-[#30805a]">{providerInfo.model}</p>
+              <p className="mt-0.5 text-xs text-[#6d9984]">{providerInfo.note}</p>
             </div>
           </div>
         </div>
@@ -103,15 +106,10 @@ export function VideoConfigSection({
             <SelectField
               value={selectedAspectRatioLabel}
               onChange={(value) => {
-                const selected = aspectRatioOptions.find(
-                  (option) => option.label === value
-                );
-
-                if (selected) {
-                  onAspectRatioChange(selected.ratio);
-                }
+                const selected = aspectRatioOptions.find((opt) => opt.label === value);
+                if (selected) onAspectRatioChange(selected.ratio);
               }}
-              options={aspectRatioOptions.map((option) => option.label)}
+              options={aspectRatioOptions.map((opt) => opt.label)}
             />
           </div>
 
@@ -120,13 +118,14 @@ export function VideoConfigSection({
             <SelectField
               value={selectedDurationLabel}
               onChange={(value) => {
-                const selected = durationOptions.find((option) => option.label === value);
-                if (selected) {
-                  onDurationSecondsChange(selected.value);
-                }
+                const selected = durationOptions.find((opt) => opt.label === value);
+                if (selected) onDurationSecondsChange(selected.value);
               }}
-              options={durationOptions.map((option) => option.label)}
+              options={durationOptions.map((opt) => opt.label)}
             />
+            {multiClipHint && (
+              <p className="text-[11px] leading-relaxed text-[#5b8a72]">{multiClipHint}</p>
+            )}
           </div>
         </div>
       </div>

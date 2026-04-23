@@ -36,6 +36,7 @@ type GenerationRecord = {
   projectId: string;
   status: "pending" | "processing" | "completed" | "failed";
   progress: number;
+  progressMessage?: string | null;
   videoUrl?: string;
   audioUrl?: string;
   errorMessage?: string;
@@ -53,6 +54,8 @@ export type RuntimeSettingsRecord = {
   fptTtsUrl: string;
   fptAudioWaitTimeoutMs: number;
   fptTtsJobRetries: number;
+  klingAccessKeyId?: string;
+  klingAccessKeySecret?: string;
   publicAppUrl?: string;
 };
 
