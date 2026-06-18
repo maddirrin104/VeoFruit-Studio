@@ -5,6 +5,16 @@ export interface ParsedScene {
   rawText: string;
 }
 
+// Strip "CharacterName: dialogue" prefixes that AI models sometimes add despite instructions.
+// Only removes the prefix when the part before ": " contains no commas (names don't have commas)
+// and is at most 40 chars — short enough to be a role label, not a sentence opener.
+function stripActorPrefixes(voiceover: string): string {
+  return voiceover
+    .split("\n")
+    .map((line) => line.replace(/^[^,\n]{2,40}:\s+(?=\S)/, ""))
+    .join("\n");
+}
+
 export function parseScriptIntoScenes(script: string): ParsedScene[] {
   if (!script?.trim()) {
     return [];
@@ -42,7 +52,7 @@ export function parseScriptIntoScenes(script: string): ParsedScene[] {
     scenes.push({
       sceneNo: headings[i].sceneNo,
       visualPrompt: (visualMatch?.[1] ?? "").trim(),
-      voiceover: (voiceMatch?.[1] ?? "").trim(),
+      voiceover: stripActorPrefixes((voiceMatch?.[1] ?? "").trim()),
       rawText: chunk,
     });
   }

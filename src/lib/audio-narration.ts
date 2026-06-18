@@ -9,6 +9,8 @@ export interface NarrationContextInput {
   readSpeed: number;
 }
 
+import { parseScriptIntoScenes } from "@/lib/scene-parser";
+
 type SceneBlock = {
   sceneNo: number | null;
   content: string;
@@ -127,24 +129,26 @@ function limitNarrationLength(text: string, targetWords: number): string {
 
 export function buildNarrationText(context: NarrationContextInput): string {
   const script = context.script?.trim() || "";
-  const sceneOneScriptLines = script ? extractDialogueLinesFromScript(script, 1) : [];
-  const scriptLines =
-    sceneOneScriptLines.length > 0
-      ? sceneOneScriptLines
-      : script
-      ? extractDialogueLinesFromScript(script)
-      : [];
+
+  // For 10s single-clip videos, use only Scene 1 voiceover
+  if (context.durationSeconds === 10 && script) {
+    const scenes = parseScriptIntoScenes(script);
+    const scene1Voiceover = scenes.length > 0 ? scenes[0].voiceover : "";
+    if (scene1Voiceover) {
+      return normalizeSpacing(scene1Voiceover);
+    }
+  }
+
+  // For multi-clip or when Scene 1 not found, use full script dialogue
+  const scriptLines = script ? extractDialogueLinesFromScript(script) : [];
   const raw = scriptLines.join(" ").trim();
 
-  // When script dialogue exists, keep narration text strictly aligned with script lines
-  // so on-screen lip movement has a better chance to match generated audio.
   const combined = normalizeSpacing(raw);
   const fallback = normalizeSpacing(
     `Hôm nay chúng tôi giới thiệu ${context.storyTopic || "sản phẩm trái cây tươi"} với phong cách tự nhiên và gần gũi.`
   );
 
   if (combined) {
-    // If script dialogue exists, keep full Scene 1 narration without word trimming.
     return combined;
   }
 

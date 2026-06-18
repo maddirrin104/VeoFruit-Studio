@@ -7,26 +7,38 @@ import { getRuntimeSettings } from "@/lib/runtime-settings";
 export class RunwayGenerationError extends Error {
   code: "TASK_FAILED" | "TASK_TIMEOUT" | "API_ERROR";
   retryable: boolean;
+  details?: { failure?: string; failureCode?: string };
 
   constructor(
     message: string,
     code: "TASK_FAILED" | "TASK_TIMEOUT" | "API_ERROR",
-    retryable: boolean
+    retryable: boolean,
+    details?: { failure?: string; failureCode?: string }
   ) {
     super(message);
     this.name = "RunwayGenerationError";
     this.code = code;
     this.retryable = retryable;
+    this.details = details;
   }
 }
 
-export type RunwayRatio = "1280:720" | "720:1280";
+// Both gen4.5 and gen4_turbo require pixel-dimension ratios (confirmed from API validation errors)
+export type RunwayRatio =
+  | "1280:720" | "720:1280"
+  | "1104:832" | "832:1104"
+  | "960:960"
+  | "1584:672";
+
+export type RunwayModel =
+  | "gen4.5"       // text-to-video & image-to-video
+  | "gen4_turbo";  // image-to-video only
 
 export interface RunwayVideoRequest {
   prompt: string;
   ratio: RunwayRatio;
   durationSeconds?: number;
-  model?: "gen4.5";
+  model?: RunwayModel;
   promptImageUrl?: string;
 }
 
@@ -49,37 +61,33 @@ function normalizePromptText(prompt: string): string {
 }
 
 export function mapAspectRatioToRunwayRatio(
-  aspectRatio?: string
+  aspectRatio?: string,
+  _model?: string
 ): RunwayRatio {
-  if (aspectRatio === "16:9") {
-    return "1280:720";
+  // Both gen4.5 and gen4_turbo require pixel-dimension ratios
+  switch (aspectRatio) {
+    case "16:9": return "1280:720";
+    case "1:1":  return "960:960";
+    case "4:5":  return "832:1104";
+    case "9:16":
+    default:     return "720:1280";
   }
-
-  return "720:1280";
 }
 
-function resolveDurationSeconds(durationSeconds?: number): number {
-  const fallbackDuration = 10;
+// RunwayML API only accepts 5 or 10 as valid duration values.
+// Any other integer causes "Validation of body failed" (400).
+function resolveDurationSeconds(durationSeconds?: number, model?: string): number {
+  // Models cap at 10s; no model-specific override needed — 5/10 snap handles all cases
 
   if (durationSeconds === undefined || Number.isNaN(durationSeconds)) {
-    return fallbackDuration;
-  }
-
-  if (!Number.isInteger(durationSeconds)) {
-    throw new Error("Thời lượng video phải là số nguyên theo đơn vị giây.");
-  }
-
-  // UI allows longer presets (30s, 60s, 3p), but current provider request supports max 10s per job.
-  if (durationSeconds > 10) {
     return 10;
   }
 
-  // Runway gen4.5 supports integer durations in range 2..10 seconds.
-  if (durationSeconds < 2 || durationSeconds > 10) {
-    throw new Error("Model hiện tại chỉ hỗ trợ thời lượng từ 2 đến 10 giây.");
-  }
+  // Clamp anything above 10 down to 10 (multi-clip handled at route level)
+  const clamped = Math.min(durationSeconds, 10);
 
-  return durationSeconds;
+  // Snap to nearest valid value: 5 or 10
+  return clamped <= 7 ? 5 : 10;
 }
 
 function normalizeRunwayError(error: unknown): RunwayGenerationError {
@@ -132,10 +140,14 @@ function shouldFallbackToTextOnly(error: unknown): boolean {
     lowered.includes("promptimage") ||
     lowered.includes("timeout while fetching asset") ||
     lowered.includes("invalid_union") ||
+    lowered.includes("bad_output") ||
+    lowered.includes("internal.bad") ||
     failureText.includes("promptimage") ||
     failureText.includes("fetch") ||
     failureText.includes("asset") ||
-    failureText.includes("url")
+    failureText.includes("url") ||
+    failureText.includes("bad_output") ||
+    failureText.includes("internal")
   );
 }
 
@@ -180,9 +192,52 @@ function isWindowsAbsolutePath(value: string): boolean {
   return /^[a-zA-Z]:[\\/]/.test(value);
 }
 
+async function uploadImageAsEphemeral(filePath: string): Promise<string> {
+  const settings = await getRuntimeSettings();
+  const buffer = await fs.readFile(filePath);
+  const mimeType = detectImageMimeType(filePath);
+  const filename = path.basename(filePath);
+
+  const initRes = await fetch(`${settings.runwayApiBaseUrl}/v1/uploads`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${settings.runwayApiSecret}`,
+      "Content-Type": "application/json",
+      "X-Runway-Version": settings.runwayApiVersion,
+    },
+    body: JSON.stringify({ filename, type: "ephemeral" }),
+  });
+
+  if (!initRes.ok) {
+    throw new Error(`Runway upload init failed (${initRes.status})`);
+  }
+
+  const uploadInitBody = await initRes.json() as Record<string, unknown>;
+  const runwayUri = (uploadInitBody.runwayUri || uploadInitBody.uri) as string | undefined;
+  const uploadUrl = uploadInitBody.uploadUrl as string | undefined;
+  const fields = (uploadInitBody.fields ?? {}) as Record<string, string>;
+
+  if (!runwayUri || !uploadUrl) {
+    throw new Error(`Runway upload init returned unexpected response: ${JSON.stringify(uploadInitBody).slice(0, 200)}`);
+  }
+
+  const formData = new FormData();
+  for (const [key, value] of Object.entries(fields)) {
+    formData.append(key, value);
+  }
+  formData.append("file", new Blob([buffer], { type: mimeType }), filename);
+
+  const uploadRes = await fetch(uploadUrl, { method: "POST", body: formData });
+  if (!uploadRes.ok) {
+    throw new Error(`Runway storage upload failed (${uploadRes.status})`);
+  }
+
+  console.log(`[Runway] ✅ Uploaded image as ephemeral asset: ${runwayUri} (${(buffer.length / 1024).toFixed(0)}KB)`);
+  return runwayUri;
+}
+
 async function toImageDataUrl(filePath: string): Promise<string> {
   try {
-    // Kiểm tra file tồn tại
     await fs.access(filePath);
   } catch {
     throw new RunwayGenerationError(
@@ -194,8 +249,8 @@ async function toImageDataUrl(filePath: string): Promise<string> {
 
   try {
     const stats = await fs.stat(filePath);
-    const MAX_IMAGE_SIZE = 50 * 1024 * 1024; // 50MB
-    
+    const MAX_IMAGE_SIZE = 50 * 1024 * 1024;
+
     if (stats.size > MAX_IMAGE_SIZE) {
       throw new RunwayGenerationError(
         `Ảnh quá lớn (${(stats.size / 1024 / 1024).toFixed(2)}MB). Tối đa ${MAX_IMAGE_SIZE / 1024 / 1024}MB`,
@@ -207,14 +262,11 @@ async function toImageDataUrl(filePath: string): Promise<string> {
     const buffer = await fs.readFile(filePath);
     const mimeType = detectImageMimeType(filePath);
     const dataUrl = `data:${mimeType};base64,${buffer.toString("base64")}`;
-    
-    console.log(`[Runway] Successfully converted image to data URL: ${path.basename(filePath)} (${(buffer.length / 1024).toFixed(2)}KB)`);
-    
+
+    console.log(`[Runway] Converted image to data URL (fallback): ${path.basename(filePath)} (${(buffer.length / 1024).toFixed(0)}KB)`);
     return dataUrl;
   } catch (error) {
-    if (error instanceof RunwayGenerationError) {
-      throw error;
-    }
+    if (error instanceof RunwayGenerationError) throw error;
     throw new RunwayGenerationError(
       `Lỗi đọc ảnh từ ${path.basename(filePath)}: ${(error as Error)?.message || "Unknown error"}`,
       "API_ERROR",
@@ -254,15 +306,11 @@ async function resolvePromptImageUrl(promptImageUrl?: string): Promise<string | 
   const directLocalPath = await tryResolveLocalPromptImagePath(trimmed);
   if (directLocalPath) {
     try {
-      const dataUrl = await toImageDataUrl(directLocalPath);
-      console.log(`[Runway] ✅ Successfully prepared local image for image-to-video`);
-      return dataUrl;
+      return await toImageDataUrl(directLocalPath);
     } catch (error) {
-      if (error instanceof RunwayGenerationError) {
-        throw error;
-      }
+      if (error instanceof RunwayGenerationError) throw error;
       throw new RunwayGenerationError(
-        `Không thể đọc ảnh local cho image-to-video: ${(error as Error)?.message || "Unknown error"}`,
+        `Không thể chuẩn bị ảnh cho image-to-video: ${(error as Error)?.message || "Unknown error"}`,
         "API_ERROR",
         false
       );
@@ -292,7 +340,6 @@ async function resolvePromptImageUrl(promptImageUrl?: string): Promise<string | 
           false
         );
       }
-
       return await toImageDataUrl(localPath);
     }
 
@@ -346,6 +393,10 @@ async function runwayApiRequest<T>(
       Authorization: `Bearer ${settings.runwayApiSecret}`,
       "Content-Type": "application/json",
       "X-Runway-Version": settings.runwayApiVersion,
+      // Force a new TCP connection per request to avoid ECONNRESET from stale keep-alive connections.
+      // Runway's dev server closes idle connections after ~40s; native fetch's connection pool
+      // tries to reuse them and gets "fetch failed".
+      Connection: "close",
       ...(init.headers ?? {}),
     },
   });
@@ -357,6 +408,10 @@ async function runwayApiRequest<T>(
     const errorMessage =
       extractErrorMessage(parsed) ||
       (responseText ? responseText.slice(0, 700) : "Unknown Runway API error");
+
+    if (response.status === 400) {
+      console.error(`[Runway] 400 Validation error on ${endpoint}. Raw response:`, responseText?.slice(0, 500));
+    }
 
     throw new RunwayGenerationError(
       `Runway API request failed (${response.status}): ${errorMessage}`,
@@ -448,17 +503,29 @@ function extractVideoUrl(output: unknown): string | undefined {
 
 async function waitForRunwayTaskOutput(taskId: string, timeoutMs: number): Promise<RunwayTaskResponse> {
   const startTime = Date.now();
-
-  
-  // Adaptive polling: start with 2s checks, then slow down to 5s after 30 seconds
-  // This reduces API calls by ~60% while maintaining responsiveness for quick completions
   let pollIntervalMs = 2000;
-  const slowdownThresholdMs = 30 * 1000; // Switch to slower polling after 30s
+  const slowdownThresholdMs = 30 * 1000;
+  let lastProgressLogMs = 0;
+  let consecutivePollFailures = 0;
+  const maxConsecutivePollFailures = 4;
 
   while (Date.now() - startTime < timeoutMs) {
-    const task = await runwayApiRequest<RunwayTaskResponse>(`/v1/tasks/${taskId}`, {
-      method: "GET",
-    });
+    let task: RunwayTaskResponse;
+    try {
+      task = await runwayApiRequest<RunwayTaskResponse>(`/v1/tasks/${taskId}`, {
+        method: "GET",
+      });
+      consecutivePollFailures = 0;
+    } catch (pollErr) {
+      consecutivePollFailures++;
+      if (consecutivePollFailures >= maxConsecutivePollFailures) {
+        console.error(`[Runway] ❌ Poll failed ${consecutivePollFailures}x for task ${taskId}, giving up:`, (pollErr as Error)?.message);
+        throw pollErr;
+      }
+      console.warn(`[Runway] ⚠️ Poll network error (${consecutivePollFailures}/${maxConsecutivePollFailures}), retrying in 5s:`, (pollErr as Error)?.message);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      continue;
+    }
 
     const status = (task.status || "").toUpperCase();
     if (status === "SUCCEEDED") {
@@ -468,25 +535,33 @@ async function waitForRunwayTaskOutput(taskId: string, timeoutMs: number): Promi
     if (status === "FAILED" || status === "CANCELLED") {
       const failureMessage = task.failure || task.error?.message || "Runway task failed";
       const failureCodeSuffix = task.failureCode ? ` (code: ${task.failureCode})` : "";
+      console.error(`[Runway] ❌ Task ${taskId} ${status}: failure="${task.failure ?? ""}" failureCode="${task.failureCode ?? ""}"`);
       throw new RunwayGenerationError(
         `Runway task failed: ${failureMessage}${failureCodeSuffix}`,
         "TASK_FAILED",
-        true
+        true,
+        { failure: task.failure, failureCode: task.failureCode }
       );
     }
 
-    // Adaptive polling: slow down after 30 seconds to reduce API load
-    if (Date.now() - startTime > slowdownThresholdMs) {
-      pollIntervalMs = 5000; // 5 seconds after 30s elapsed
+    const elapsedMs = Date.now() - startTime;
+
+    if (elapsedMs - lastProgressLogMs >= 30_000) {
+      lastProgressLogMs = elapsedMs;
+      console.info(`[Runway] Still waiting for task ${taskId} (${Math.round(elapsedMs / 1000)}s elapsed, status=${task.status || "unknown"})...`);
     }
-    
+
+    if (elapsedMs > slowdownThresholdMs) {
+      pollIntervalMs = 5000;
+    }
+
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
 
   throw new RunwayGenerationError(
-    "Runway task timed out while waiting for video output",
+    `Runway task timed out after ${Math.round(timeoutMs / 1000)}s. The task may still be processing on Runway's servers.`,
     "TASK_TIMEOUT",
-    true
+    false
   );
 }
 
@@ -539,7 +614,7 @@ export async function generateVideoWithRunway(
   request: RunwayVideoRequest
 ): Promise<RunwayVideoResponse> {
   const model = request.model ?? "gen4.5";
-  const duration = resolveDurationSeconds(request.durationSeconds);
+  const duration = resolveDurationSeconds(request.durationSeconds, model);
   const promptText = normalizePromptText(request.prompt);
   const promptImageUrl = await resolvePromptImageUrl(request.promptImageUrl);
 
@@ -560,11 +635,20 @@ export async function generateVideoWithRunway(
         console.log(`[Runway] ✅ Image-to-video task created: ${taskId}`);
         task = await waitForRunwayTaskOutput(taskId, 10 * 60 * 1000);
       } catch (imageError) {
+        const imageErrMsg = (imageError as Error)?.message || "Unknown error";
+        const imageErrDetails = (imageError as RunwayGenerationError)?.details;
+        console.error("[Runway] ❌ Image-to-video catch:", imageErrMsg, imageErrDetails ?? "");
+
         if (!shouldFallbackToTextOnly(imageError)) {
           throw imageError;
         }
 
-        console.warn("[Runway] ⚠️ image-to-video failed; fallback to text-to-video:", (imageError as Error)?.message);
+        // gen4_turbo only supports image-to-video; don't fallback to text-to-video
+        if (model === "gen4_turbo") {
+          throw new Error(`Gen4 Turbo video generation failed: ${imageErrMsg}`);
+        }
+
+        console.warn("[Runway] ⚠️ image-to-video failed; fallback to text-to-video:", imageErrMsg);
         taskId = await createTextToVideoTask({
           model,
           promptText,
@@ -574,6 +658,11 @@ export async function generateVideoWithRunway(
         task = await waitForRunwayTaskOutput(taskId, 10 * 60 * 1000);
       }
     } else {
+      // gen4_turbo only supports image-to-video
+      if (model === "gen4_turbo") {
+        throw new Error("Gen4 Turbo only supports image-to-video. Please provide an image or switch to Gen 4.5 for text-to-video.");
+      }
+
       taskId = await createTextToVideoTask({
         model,
         promptText,

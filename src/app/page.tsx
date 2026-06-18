@@ -7,6 +7,7 @@ import { PreviewPanel } from "@/components/sections/PreviewPanel";
 import { StudioHeader } from "@/components/sections/StudioHeader";
 import { VideoConfigSection } from "@/components/sections/VideoConfigSection";
 import { DraftSection } from "@/components/sections/DraftSection";
+import { ProductionBriefSection } from "@/components/sections/ProductionBriefSection";
 import { WorkflowModeSection } from "@/components/sections/WorkflowModeSection";
 import { ApiConfigModal } from "@/components/sections/ApiConfigModal";
 import type { WorkflowMode } from "@/types/studio";
@@ -31,68 +32,17 @@ import {
   getProjects,
   type ProjectRecord,
   type RuntimeSettingsRecord,
+  RetryableApiError,
 } from "@/services/studio-api";
 
 type GenerationState = "idle" | "pending" | "processing" | "completed" | "failed";
 
-const CHARACTER_TYPES = [
-  "Nữ tư vấn viên cửa hàng trái cây",
-  "Nam tư vấn viên cửa hàng trái cây",
-  "Chủ nông trại trái cây",
-  "Chủ shop trái cây thân thiện",
-  "Nhân viên siêu thị quầy trái cây",
-  "Đầu bếp chia sẻ công thức trái cây",
-  "Food reviewer trải nghiệm trái cây",
-  "Mẹ bỉm chia sẻ bữa phụ cho bé",
-  "MC giới thiệu sản phẩm tại quầy",
-  "Nhân vật 3D hoạt hình",
-  "Sinh viên làm vlog ẩm thực",
-  "Khác (Tùy chọn)",
-] as const;
-
-const SCENE_LOCATIONS = [
-  "Cửa hàng trái cây",
-  "Quầy trái cây trong trung tâm thương mại",
-  "Sạp trái cây ngoài chợ",
-  "Nông trại trái cây",
-  "Bếp gia đình",
-] as const;
-
-const CONTENT_TONES = [
-  "Giới thiệu",
-  "Hướng dẫn",
-  "So sánh",
-  "Lợi ích sức khỏe",
-  "Viral",
-  "Review",
-  "Giáo dục",
-  "Kể chuyện",
-  "Hài hước",
-  "Bán hàng nhẹ nhàng",
-  "Livestream",
-  "Khuyến mãi",
-  "Chia sẻ mẹo chọn trái cây",
-  "Phong cách đời thường",
-  "Cảm hứng tích cực",
-] as const;
-
-const VIDEO_GENRES = [
-  "Giới thiệu trái cây",
-  "Giới thiệu trong cửa hàng",
-  "Kể chuyện thương hiệu",
-  "Quảng cáo theo mùa",
-  "Review sản phẩm",
-  "So sánh và tư vấn chọn mua",
-  "Talkshow bán hàng",
-  "Minigame tương tác",
-  "Livestream demo",
-  "Nấu ăn cùng trái cây",
-  "Bí quyết bảo quản trái cây",
-] as const;
-
-function pickRandom<T>(items: readonly T[]): T {
-  return items[Math.floor(Math.random() * items.length)];
-}
+type NotificationModal = {
+  type: "error" | "success" | "warning";
+  title: string;
+  message: string;
+  retryAction?: () => void;
+} | null;
 
 function normalizeReferenceImageUrl(url?: string): string | undefined {
   const trimmed = url?.trim();
@@ -118,7 +68,6 @@ function buildDefaultCharacterDescription(
   characterType: string,
   sceneLocation: string
 ) {
-  // Handle custom character type
   if (characterType.includes("Khác") || characterType.includes("Tùy chọn")) {
     return `Nhân vật giới thiệu tại ${sceneLocation}, phong cách tự nhiên, giao tiếp mạnh mẽ, diễn đạt mạch lạc và tập trung vào thông tin hữu ích cho người mua.`;
   }
@@ -235,6 +184,7 @@ function mapProjectToForm(project: ProjectRecord): typeof DEFAULT_FORM {
     motionIntensity: getNumberConfig(imageConfig, "motionIntensity", DEFAULT_FORM.motionIntensity),
     transitionEnabled: getBooleanConfig(imageConfig, "transitionEnabled", DEFAULT_FORM.transitionEnabled),
     subjectConsistent: getBooleanConfig(imageConfig, "subjectConsistent", DEFAULT_FORM.subjectConsistent),
+    audioEnabled: getBooleanConfig(audioConfig, "audioEnabled", DEFAULT_FORM.audioEnabled),
     narrationMode:
       (getStringConfig(audioConfig, "narrationMode") as typeof DEFAULT_FORM.narrationMode) ||
       DEFAULT_FORM.narrationMode,
@@ -259,18 +209,19 @@ const DEFAULT_FORM = {
     "Nữ tư vấn viên tại cửa hàng trái cây, tác phong chuyên nghiệp, giao tiếp thân thiện, giới thiệu điểm nổi bật của từng loại trái cây.",
   script: "",
   contentTone: "Giới thiệu",
-  videoGenre: "Giới thiệu trong cửa hàng",
-  numberOfScenes: 3,
+  videoGenre: "Giới thiệu sản phẩm",
+  numberOfScenes: 1,
   resolution: "720p" as "720p" | "1080p",
-  aiModel: "Gen 4.5",
+  aiModel: "gen4.5",
   aiProvider: "runway" as "runway" | "kling",
   aspectRatio: "9:16" as "9:16" | "1:1" | "16:9" | "4:5",
-  durationSeconds: 15,
+  durationSeconds: 10,
   emotionStyle: "Vật tươi",
   visualStyle: "Cinematic",
   motionIntensity: 50,
   transitionEnabled: true,
   subjectConsistent: true,
+  audioEnabled: true,
   narrationMode: "separate_voiceover" as "script_read_along" | "separate_voiceover",
   voiceType: "banmai" as VoiceType,
   language: "Tiếng Việt",
@@ -455,30 +406,33 @@ export default function HomePage() {
   const [previewVoiceUrl, setPreviewVoiceUrl] = useState<string | undefined>(undefined);
   const [sampleImageUrl, setSampleImageUrl] = useState<string | undefined>(undefined);
   const [sampleImageName, setSampleImageName] = useState<string | undefined>(undefined);
-  const [uploadedSampleImageUrl, setUploadedSampleImageUrl] = useState<string | undefined>(
-    undefined
-  );
+  const [uploadedSampleImageUrl, setUploadedSampleImageUrl] = useState<string | undefined>(undefined);
+  const [imageAngle, setImageAngle] = useState<import("@/types/studio").ImageAngle>("eye_level");
   const [brandImageUrl, setBrandImageUrl] = useState<string | undefined>(undefined);
   const [brandImageName, setBrandImageName] = useState<string | undefined>(undefined);
-  const [uploadedBrandImageUrl, setUploadedBrandImageUrl] = useState<string | undefined>(
-    undefined
-  );
+  const [uploadedBrandImageUrl, setUploadedBrandImageUrl] = useState<string | undefined>(undefined);
   const [referenceImageUrl, setReferenceImageUrl] = useState<string | undefined>(undefined);
   const [isUploadingSampleImage, setIsUploadingSampleImage] = useState(false);
   const [isUploadingBrandImage, setIsUploadingBrandImage] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [notificationModal, setNotificationModal] = useState<NotificationModal>(null);
   const [generationResultModal, setGenerationResultModal] = useState<
     { status: "completed" | "failed"; message: string } | null
   >(null);
-  const [runtimeSettings, setRuntimeSettings] = useState<RuntimeSettingsRecord>(
-    DEFAULT_RUNTIME_SETTINGS
-  );
+  const [runtimeSettings, setRuntimeSettings] = useState<RuntimeSettingsRecord>(DEFAULT_RUNTIME_SETTINGS);
   const [settingsStoragePath, setSettingsStoragePath] = useState<string | undefined>(undefined);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const sampleImageUploadTokenRef = useRef(0);
   const brandImageUploadTokenRef = useRef(0);
+
+  const showNotification = useCallback((
+    type: "error" | "success" | "warning",
+    title: string,
+    message: string,
+    retryAction?: () => void
+  ) => {
+    setNotificationModal({ type, title, message, retryAction });
+  }, []);
 
   const updateForm = useCallback((partial: Partial<typeof DEFAULT_FORM>) => {
     setForm((prev) => ({ ...prev, ...partial }));
@@ -504,19 +458,18 @@ export default function HomePage() {
 
   const handleSaveRuntimeSettings = useCallback(async () => {
     setIsSavingSettings(true);
-    setErrorMessage(null);
 
     try {
       const result = await saveRuntimeSettings(runtimeSettings);
       setRuntimeSettings(result.settings);
       setSettingsStoragePath(result.storagePath);
-      setSuccessMessage("Đã lưu Settings API thành công. Các API mới sẽ dùng cấu hình này ngay.");
+      showNotification("success", "Lưu cấu hình thành công", "Đã lưu Settings API thành công. Các API mới sẽ dùng cấu hình này ngay.");
     } catch (error) {
-      setErrorMessage((error as Error).message);
+      showNotification("error", "Lưu cấu hình thất bại", (error as Error).message);
     } finally {
       setIsSavingSettings(false);
     }
-  }, [runtimeSettings]);
+  }, [runtimeSettings, showNotification]);
 
   const ensureProject = useCallback(async (): Promise<string> => {
     if (projectId) {
@@ -552,6 +505,7 @@ export default function HomePage() {
         readSpeed: form.readSpeed,
         emotionIntensity: form.emotionIntensity,
         outputFormat: form.outputFormat,
+        audioEnabled: form.audioEnabled,
         bgMusicEnabled: form.bgMusicEnabled,
       },
     });
@@ -560,7 +514,7 @@ export default function HomePage() {
     return created.id;
   }, [
     form.aiModel,
-     form.aiProvider,
+    form.aiProvider,
     form.aspectRatio,
     form.bgMusicEnabled,
     form.characterDescription,
@@ -588,7 +542,6 @@ export default function HomePage() {
 
   const handleSaveDraft = useCallback(async () => {
     setIsSaving(true);
-    setErrorMessage(null);
 
     try {
       const created = await createProject({
@@ -614,6 +567,7 @@ export default function HomePage() {
           subjectConsistent: form.subjectConsistent,
         },
         audioConfig: {
+          audioEnabled: form.audioEnabled,
           narrationMode: form.narrationMode,
           voiceGender: form.voiceType,
           language: form.language,
@@ -633,20 +587,19 @@ export default function HomePage() {
       });
       setLastSavedLabel(`Đã lưu nháp: ${created.title} · lúc ${time}`);
     } catch (error) {
-      setErrorMessage((error as Error).message);
+      showNotification("error", "Lưu nháp thất bại", (error as Error).message);
     } finally {
       setIsSaving(false);
     }
-  }, [form, refreshDrafts]);
+  }, [form, refreshDrafts, showNotification]);
 
   const handleGenerateScript = useCallback(async () => {
     if (!form.storyTopic.trim()) {
-      setErrorMessage("Vui lòng chọn trái cây trước khi AI tạo kịch bản.");
+      showNotification("error", "Thiếu thông tin", "Vui lòng chọn trái cây trước khi AI tạo kịch bản.");
       return;
     }
 
     setIsGeneratingScript(true);
-    setErrorMessage(null);
 
     try {
       const effectiveReferenceImageUrl = uploadedSampleImageUrl ?? referenceImageUrl;
@@ -667,25 +620,27 @@ export default function HomePage() {
         videoGenre: form.videoGenre,
         contentTone: form.contentTone,
         numberOfScenes: form.numberOfScenes,
+        aiModel: form.aiModel,
         referenceImageUrl: effectiveReferenceImageUrl,
         referenceImageName: sampleImageName,
         referenceImageSource: effectiveReferenceImageSource,
         brandBackgroundImageUrl: effectiveBrandBackgroundImageUrl,
         brandBackgroundImageName: brandImageName,
         brandBackgroundImageSource: effectiveBrandBackgroundImageSource,
+        imageAngle: form.aiModel === "gen4_turbo" ? imageAngle : undefined,
       });
 
       updateForm({ script: result.script });
+
       if (result.warning) {
-        setSuccessMessage(result.warning);
+        showNotification("warning", "Lưu ý", result.warning);
       } else if (result.source === "gemini") {
-        setSuccessMessage("Đã tạo kịch bản bằng Gemini thành công.");
+        showNotification("success", "Kịch bản đã sẵn sàng", "Đã tạo kịch bản bằng Gemini thành công.");
       } else {
-        setSuccessMessage("Đã tạo kịch bản dự phòng do Gemini tạm thời chưa phản hồi ổn định.");
+        showNotification("warning", "Kịch bản dự phòng", "Đã tạo kịch bản dự phòng do Gemini tạm thời chưa phản hồi ổn định.");
       }
     } catch (error) {
-      setErrorMessage((error as Error).message);
-      setSuccessMessage(null);
+      showNotification("error", "Tạo kịch bản thất bại", (error as Error).message);
     } finally {
       setIsGeneratingScript(false);
     }
@@ -704,104 +659,11 @@ export default function HomePage() {
     form.videoGenre,
     form.voiceType,
     updateForm,
-  ]);
-
-  const handleRandomizeScript = useCallback(async () => {
-    if (!form.storyTopic.trim()) {
-      setErrorMessage("Vui lòng chọn trái cây trước khi random kịch bản.");
-      return;
-    }
-
-    const randomCharacterType = pickRandom(CHARACTER_TYPES);
-    const randomSceneLocation = pickRandom(SCENE_LOCATIONS);
-    const randomContentTone = pickRandom(CONTENT_TONES);
-    const randomGenre = pickRandom(VIDEO_GENRES);
-    const randomScenes = pickRandom([3, 4, 5, 6] as const);
-
-    const nextVoiceGender =
-      randomCharacterType.includes("Nữ")
-        ? "Nữ"
-        : randomCharacterType.includes("Nam")
-        ? "Nam"
-        : getVoiceGenderFromVoiceType(form.voiceType);
-
-    const nextVoiceType = getDefaultVoiceByGender(nextVoiceGender);
-
-    const randomCharacterDescription = buildDefaultCharacterDescription(
-      nextVoiceGender,
-      randomCharacterType,
-      randomSceneLocation
-    );
-
-    updateForm({
-      characterType: randomCharacterType,
-      sceneLocation: randomSceneLocation,
-      contentTone: randomContentTone,
-      videoGenre: randomGenre,
-      numberOfScenes: randomScenes,
-      voiceType: nextVoiceType,
-      characterDescription: randomCharacterDescription,
-    });
-
-    setIsGeneratingScript(true);
-    setErrorMessage(null);
-
-    try {
-      const effectiveReferenceImageUrl = uploadedSampleImageUrl ?? referenceImageUrl;
-      const effectiveReferenceImageSource = uploadedSampleImageUrl
-        ? "upload"
-        : referenceImageUrl
-        ? "url"
-        : undefined;
-      const effectiveBrandBackgroundImageUrl = uploadedBrandImageUrl;
-      const effectiveBrandBackgroundImageSource = uploadedBrandImageUrl ? "upload" : undefined;
-
-      const result = await generateScript({
-        topic: form.storyTopic,
-        characterDescription: randomCharacterDescription,
-        characterType: randomCharacterType,
-        sceneLocation: randomSceneLocation,
-        voiceType: nextVoiceGender,
-        videoGenre: randomGenre,
-        contentTone: randomContentTone,
-        numberOfScenes: randomScenes,
-        referenceImageUrl: effectiveReferenceImageUrl,
-        referenceImageName: sampleImageName,
-        referenceImageSource: effectiveReferenceImageSource,
-        brandBackgroundImageUrl: effectiveBrandBackgroundImageUrl,
-        brandBackgroundImageName: brandImageName,
-        brandBackgroundImageSource: effectiveBrandBackgroundImageSource,
-      });
-
-      updateForm({ script: result.script });
-      if (result.warning) {
-        setSuccessMessage(result.warning);
-      } else if (result.source === "gemini") {
-        setSuccessMessage("Đã random và tạo kịch bản bằng Gemini thành công.");
-      } else {
-        setSuccessMessage("Đã random kịch bản dự phòng do Gemini tạm thời chưa phản hồi ổn định.");
-      }
-    } catch (error) {
-      setErrorMessage((error as Error).message);
-      setSuccessMessage(null);
-    } finally {
-      setIsGeneratingScript(false);
-    }
-  }, [
-    brandImageName,
-    uploadedBrandImageUrl,
-    form.storyTopic,
-    form.voiceType,
-    referenceImageUrl,
-    sampleImageName,
-    updateForm,
-    uploadedSampleImageUrl,
+    showNotification,
   ]);
 
   const handleGenerateVideo = useCallback(async () => {
     setIsGeneratingVideo(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
     setGenerationResultModal(null);
 
     try {
@@ -837,7 +699,6 @@ export default function HomePage() {
       let compositeReferenceImageName = sampleImageName;
       if (sampleImageUrl && brandImageUrl) {
         try {
-          // Use local preview sources to avoid ngrok/CORS fetch issues during browser-side compositing.
           const compositeFile = await buildCompositeReferenceImageFile(
             sampleImageUrl,
             brandImageUrl,
@@ -874,6 +735,7 @@ export default function HomePage() {
           subjectConsistent: form.subjectConsistent,
         },
         audioConfig: {
+          audioEnabled: form.audioEnabled,
           narrationMode: form.narrationMode,
           voiceGender: form.voiceType,
           language: form.language,
@@ -920,8 +782,10 @@ export default function HomePage() {
           brandBackgroundImageUrl: uploadedBrandImageUrl,
           brandBackgroundImageName: brandImageName,
           brandBackgroundImageSource: uploadedBrandImageUrl ? "upload" : undefined,
+          imageAngle: form.aiModel === "gen4_turbo" ? imageAngle : undefined,
         },
         audioConfig: {
+          audioEnabled: form.audioEnabled,
           narrationMode: form.narrationMode,
           voiceGender: form.voiceType,
           language: form.language,
@@ -937,8 +801,7 @@ export default function HomePage() {
       setVideoUrl(undefined);
       setAudioUrl(undefined);
     } catch (error) {
-      setErrorMessage((error as Error).message);
-      setSuccessMessage(null);
+      showNotification("error", "Không thể tạo video", (error as Error).message);
       setIsGeneratingVideo(false);
     }
   }, [
@@ -952,11 +815,11 @@ export default function HomePage() {
     sampleImageName,
     referenceImageUrl,
     uploadedSampleImageUrl,
+    showNotification,
   ]);
 
   const handlePreviewVoice = useCallback(async (voiceToPreview?: VoiceType) => {
     setIsPreviewingVoice(true);
-    setErrorMessage(null);
 
     try {
       const effectiveVoiceType = voiceToPreview ?? form.voiceType;
@@ -978,7 +841,20 @@ export default function HomePage() {
 
       setPreviewVoiceUrl(result.audioUrl);
     } catch (error) {
-      setErrorMessage((error as Error).message);
+      if (error instanceof RetryableApiError) {
+        const msg = (error as Error).message;
+        showNotification(
+          "warning",
+          "Server FPT đang bận",
+          `Đây là sự cố tạm thời từ phía server FPT AI, không phải lỗi từ phần mềm của bạn. ${msg} Vui lòng nhấn Thử lại sau vài giây.`,
+          () => {
+            setNotificationModal(null);
+            void handlePreviewVoice(voiceToPreview);
+          }
+        );
+      } else {
+        showNotification("error", "Lỗi tạo mẫu giọng", (error as Error).message);
+      }
     } finally {
       setIsPreviewingVoice(false);
     }
@@ -991,6 +867,7 @@ export default function HomePage() {
     form.storyTopic,
     form.voiceType,
     updateForm,
+    showNotification,
   ]);
 
   useEffect(() => {
@@ -1007,7 +884,7 @@ export default function HomePage() {
         setSettingsStoragePath(data.storagePath);
       } catch (error) {
         if (!cancelled) {
-          setErrorMessage((error as Error).message);
+          showNotification("error", "Lỗi tải cấu hình", (error as Error).message);
         }
       } finally {
         if (!cancelled) {
@@ -1019,7 +896,7 @@ export default function HomePage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [showNotification]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1029,7 +906,7 @@ export default function HomePage() {
         await refreshDrafts();
       } catch (error) {
         if (!cancelled) {
-          setErrorMessage((error as Error).message);
+          showNotification("error", "Lỗi tải danh sách nháp", (error as Error).message);
         }
       }
     })();
@@ -1037,7 +914,7 @@ export default function HomePage() {
     return () => {
       cancelled = true;
     };
-  }, [refreshDrafts]);
+  }, [refreshDrafts, showNotification]);
 
   useEffect(() => {
     if (!generationId) {
@@ -1062,22 +939,21 @@ export default function HomePage() {
           const failedMessage =
             statusData.errorMessage ||
             "Tạo video thất bại. Vui lòng kiểm tra quota API và thử lại.";
-          setErrorMessage(failedMessage);
-          setSuccessMessage(null);
-          setGenerationResultModal({
-            status: "failed",
-            message: failedMessage,
-          });
+          setGenerationResultModal({ status: "failed", message: failedMessage });
         }
 
         if (status === "completed") {
-          const completedMessage =
-            "Tạo video thành công. Bạn có thể xem trước hoặc tải video ngay.";
-          setSuccessMessage(completedMessage);
-          setGenerationResultModal({
-            status: "completed",
-            message: completedMessage,
-          });
+          if (statusData.audioErrorMessage) {
+            setGenerationResultModal({
+              status: "completed",
+              message: `Tạo video thành công, nhưng âm thanh bị lỗi — video không có giọng đọc.\n\nLý do: ${statusData.audioErrorMessage}`,
+            });
+          } else {
+            setGenerationResultModal({
+              status: "completed",
+              message: "Tạo video thành công. Bạn có thể xem trước hoặc tải video ngay.",
+            });
+          }
         }
 
         if (status === "completed" || status === "failed") {
@@ -1112,12 +988,11 @@ export default function HomePage() {
       setVideoUrl(undefined);
       setAudioUrl(undefined);
       setPreviewVoiceUrl(undefined);
-      setSuccessMessage(`Đã nạp nháp: ${draft.title}`);
-      setErrorMessage(null);
+      showNotification("success", "Đã nạp nháp", `Đã nạp nháp: ${draft.title}`);
     } catch (error) {
-      setErrorMessage((error as Error).message);
+      showNotification("error", "Lỗi nạp nháp", (error as Error).message);
     }
-  }, []);
+  }, [showNotification]);
 
   const handleRenameDraft = useCallback(async (draftId: string, newTitle: string) => {
     if (!newTitle.trim()) {
@@ -1135,17 +1010,16 @@ export default function HomePage() {
         setForm((prev) => ({ ...prev, title: renamed.title }));
       }
 
-      setSuccessMessage(`Đã đổi tên nháp thành “${renamed.title}”.`);
-      setErrorMessage(null);
+      showNotification("success", "Đổi tên thành công", `Đã đổi tên nháp thành "${renamed.title}".`);
     } catch (error) {
-      setErrorMessage((error as Error).message);
+      showNotification("error", "Đổi tên thất bại", (error as Error).message);
     }
-  }, [drafts, form.title, projectId, refreshDrafts]);
+  }, [drafts, form.title, projectId, refreshDrafts, showNotification]);
 
   const handleDeleteDraft = useCallback(async (draftId: string) => {
     const targetDraft = drafts.find((draft) => draft.id === draftId);
     const confirmed = window.confirm(
-      `Xóa nháp “${targetDraft?.title ?? "không tên"}”? Hành động này không thể hoàn tác.`
+      `Xóa nháp "${targetDraft?.title ?? "không tên"}"? Hành động này không thể hoàn tác.`
     );
 
     if (!confirmed) {
@@ -1168,15 +1042,14 @@ export default function HomePage() {
         }
       }
 
-      setSuccessMessage("Đã xóa nháp thành công.");
-      setErrorMessage(null);
+      showNotification("success", "Đã xóa nháp", "Đã xóa nháp thành công.");
     } catch (error) {
-      setErrorMessage((error as Error).message);
+      showNotification("error", "Xóa nháp thất bại", (error as Error).message);
     }
-  }, [drafts, projectId]);
+  }, [drafts, projectId, showNotification]);
+
   const handleSampleImageChange = useCallback(async (file: File | null) => {
     setSampleImageName(file?.name);
-    setErrorMessage(null);
 
     setSampleImageUrl((currentUrl) => {
       if (currentUrl) {
@@ -1210,17 +1083,16 @@ export default function HomePage() {
       }
 
       setUploadedSampleImageUrl(undefined);
-      setErrorMessage((error as Error).message);
+      showNotification("error", "Lỗi tải ảnh lên", (error as Error).message);
     } finally {
       if (sampleImageUploadTokenRef.current === uploadToken) {
         setIsUploadingSampleImage(false);
       }
     }
-  }, []);
+  }, [showNotification]);
 
   const handleBrandImageChange = useCallback(async (file: File | null) => {
     setBrandImageName(file?.name);
-    setErrorMessage(null);
 
     setBrandImageUrl((currentUrl) => {
       if (currentUrl) {
@@ -1254,13 +1126,13 @@ export default function HomePage() {
       }
 
       setUploadedBrandImageUrl(undefined);
-      setErrorMessage((error as Error).message);
+      showNotification("error", "Lỗi tải ảnh thương hiệu lên", (error as Error).message);
     } finally {
       if (brandImageUploadTokenRef.current === uploadToken) {
         setIsUploadingBrandImage(false);
       }
     }
-  }, []);
+  }, [showNotification]);
 
   useEffect(() => {
     return () => {
@@ -1312,8 +1184,7 @@ export default function HomePage() {
 
       return undefined;
     });
-    setErrorMessage(null);
-    setSuccessMessage(null);
+    setNotificationModal(null);
     setGenerationResultModal(null);
   }, []);
 
@@ -1334,7 +1205,9 @@ export default function HomePage() {
             isLoading={isLoadingSettings}
             isSaving={isSavingSettings}
             workflowMode={form.workflowMode}
+            aiModel={form.aiModel}
             onChange={updateRuntimeSettings}
+            onAiModelChange={(model) => updateForm({ aiModel: model })}
             onSave={handleSaveRuntimeSettings}
             onClose={() => setIsSettingsOpen(false)}
           />
@@ -1345,12 +1218,36 @@ export default function HomePage() {
             <div className="reveal-up [animation-delay:130ms]">
               <WorkflowModeSection
                 workflowMode={form.workflowMode}
-                onChange={(mode) => updateForm({ workflowMode: mode })}
+                aiModel={form.aiModel}
+                onChange={(mode) => {
+                  const defaultModel =
+                    mode === "veo3-direct" ? "veo-3.1-fast" :
+                    mode === "kling-ai-script" ? "kling-v2.6" :
+                    "gen4_turbo";
+                  updateForm({ workflowMode: mode, aiModel: defaultModel });
+                }}
+                onAiModelChange={(model) => updateForm({ aiModel: model })}
               />
             </div>
             <div className="reveal-up [animation-delay:140ms]">
+              <VideoConfigSection
+                workflowMode={form.workflowMode}
+                resolution={form.resolution}
+                aiModel={form.aiModel}
+                aspectRatio={form.aspectRatio}
+                durationSeconds={form.durationSeconds}
+                onResolutionChange={(value) => updateForm({ resolution: value })}
+                onAspectRatioChange={(value) => updateForm({ aspectRatio: value })}
+                onDurationSecondsChange={(value) => {
+                  const autoScenes = value <= 15 ? 1 : Math.ceil(value / 10);
+                  updateForm({ durationSeconds: value, numberOfScenes: autoScenes });
+                }}
+              />
+            </div>
+            <div className="reveal-up [animation-delay:190ms]">
               <ContentEditorSection
                 workflowMode={form.workflowMode}
+                durationSeconds={form.durationSeconds}
                 storyTopic={form.storyTopic}
                 characterDescription={form.characterDescription}
                 characterType={form.characterType}
@@ -1397,24 +1294,36 @@ export default function HomePage() {
                 onVideoGenreChange={(value) => updateForm({ videoGenre: value })}
                 onNumberOfScenesChange={(value) => updateForm({ numberOfScenes: value })}
                 onGenerateScript={handleGenerateScript}
-                onRandomizeScript={handleRandomizeScript}
               />
             </div>
-            <div className="reveal-up [animation-delay:190ms]">
-              <VideoConfigSection
-                workflowMode={form.workflowMode}
-                resolution={form.resolution}
-                aiModel={form.aiModel}
-                aspectRatio={form.aspectRatio}
-                durationSeconds={form.durationSeconds}
-                onResolutionChange={(value) => updateForm({ resolution: value })}
-                onAspectRatioChange={(value) => updateForm({ aspectRatio: value })}
-                onDurationSecondsChange={(value) => {
-                  const autoScenes = value > 10 ? Math.ceil(value / 10) : form.numberOfScenes;
-                  updateForm({ durationSeconds: value, numberOfScenes: autoScenes });
-                }}
-              />
-            </div>
+            {form.script.trim() && (
+              <div className="reveal-up [animation-delay:220ms]">
+                <ProductionBriefSection
+                  script={form.script}
+                  storyTopic={form.storyTopic}
+                  characterDescription={form.characterDescription}
+                  sceneLocation={form.sceneLocation}
+                  aiModel={form.aiModel}
+                  resolution={form.resolution}
+                  aspectRatio={form.aspectRatio}
+                  durationSeconds={form.durationSeconds}
+                  emotionStyle={form.emotionStyle}
+                  visualStyle={form.visualStyle}
+                  motionIntensity={form.motionIntensity}
+                  transitionEnabled={form.transitionEnabled}
+                  audioEnabled={form.audioEnabled}
+                  voiceType={form.voiceType}
+                  language={form.language}
+                  readSpeed={form.readSpeed}
+                  outputFormat={form.outputFormat}
+                  bgMusicEnabled={form.bgMusicEnabled}
+                  contentTone={form.contentTone}
+                  videoGenre={form.videoGenre}
+                  numberOfScenes={form.numberOfScenes}
+                  imageAngle={form.aiModel === "gen4_turbo" ? imageAngle : undefined}
+                />
+              </div>
+            )}
             <div className="reveal-up [animation-delay:240ms]">
               <AiOptimizationSection
                 emotionStyle={form.emotionStyle}
@@ -1428,6 +1337,7 @@ export default function HomePage() {
                 readSpeed={form.readSpeed}
                 emotionIntensity={form.emotionIntensity}
                 outputFormat={form.outputFormat}
+                audioEnabled={form.audioEnabled}
                 bgMusicEnabled={form.bgMusicEnabled}
                 isPreviewingVoice={isPreviewingVoice}
                 previewVoiceUrl={previewVoiceUrl}
@@ -1456,87 +1366,25 @@ export default function HomePage() {
                 onReadSpeedChange={(value) => updateForm({ readSpeed: value })}
                 onEmotionIntensityChange={(value) => updateForm({ emotionIntensity: value })}
                 onOutputFormatChange={(value) => updateForm({ outputFormat: value })}
+                onAudioEnabledChange={(value) => updateForm({ audioEnabled: value })}
                 onBgMusicEnabledChange={(value) => updateForm({ bgMusicEnabled: value })}
                 onPreviewVoice={handlePreviewVoice}
                 onReset={handleReset}
                 onGenerateVideo={handleGenerateVideo}
               />
             </div>
-              <div className="reveal-up [animation-delay:280ms]">
-                <DraftSection
-                  isSaving={isSaving}
-                  lastSavedLabel={lastSavedLabel}
-                  drafts={drafts}
-                  currentDraftId={projectId}
-                  onSaveDraft={handleSaveDraft}
-                  onLoadDraft={handleLoadDraft}
-                  onRenameDraft={handleRenameDraft}
-                  onDeleteDraft={handleDeleteDraft}
-                />
-              </div>
-              {errorMessage ? (
-                <p className="rounded-xl border border-[#f2bfbf] bg-[#fff1f1] px-4 py-3 text-sm text-[#b12b2b]">
-                  {errorMessage}
-                </p>
-              ) : null}
-              {successMessage && !errorMessage ? (
-                <div className="flex items-start gap-2 rounded-xl border border-[#9fdab9] bg-[#eff9f3] px-4 py-3 text-sm text-[#1b6e48]">
-                  <span className="mt-0.5 inline-block h-2.5 w-2.5 rounded-full bg-[#10b862]" />
-                  <div className="flex-1">{successMessage}</div>
-                  <button
-                    type="button"
-                    onClick={() => setSuccessMessage(null)}
-                    className="rounded-md px-2 py-1 text-xs font-semibold text-[#2a7a55] transition hover:bg-[#dff2e7]"
-                  >
-                    Đóng
-                  </button>
-                </div>
-              ) : null}
-
-              {generationResultModal ? (
-                <div className="fixed inset-0 z-140 flex items-center justify-center bg-[#0f2a1d]/28 px-4 backdrop-blur-[1px]">
-                  <div className="w-full max-w-md rounded-2xl border border-[#b9e6ce] bg-[#f3fbf7] p-5 shadow-[0_20px_50px_rgba(27,79,55,0.26)] md:p-6">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-[#3f7a5f]">
-                      Kết quả tạo video
-                    </p>
-                    <h3
-                      className={`mt-1 text-xl font-bold md:text-2xl ${
-                        generationResultModal.status === "completed"
-                          ? "text-[#0f8f4e]"
-                          : "text-[#b12b2b]"
-                      }`}
-                    >
-                      {generationResultModal.status === "completed"
-                        ? "Tạo video thành công"
-                        : "Tạo video thất bại"}
-                    </h3>
-                    <p className="mt-3 text-sm leading-relaxed text-[#365f4c] md:text-base">
-                      {generationResultModal.message}
-                    </p>
-
-                    <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
-                      {generationResultModal.status === "completed" && videoUrl ? (
-                        <a
-                          href={videoUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex h-10 items-center justify-center rounded-xl border border-[#9fdab9] bg-white px-4 text-sm font-semibold text-[#1f734d] transition hover:border-[#73c99d]"
-                        >
-                          Mở video
-                        </a>
-                      ) : null}
-
-                      <button
-                        type="button"
-                        onClick={() => setGenerationResultModal(null)}
-                        className="inline-flex h-10 items-center justify-center rounded-xl bg-[#0db461] px-4 text-sm font-semibold text-white transition hover:bg-[#0aa757]"
-                      >
-                        Đã hiểu
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
+            <div className="reveal-up [animation-delay:280ms]">
+              <DraftSection
+                isSaving={isSaving}
+                lastSavedLabel={lastSavedLabel}
+                drafts={drafts}
+                currentDraftId={projectId}
+                onSaveDraft={handleSaveDraft}
+                onLoadDraft={handleLoadDraft}
+                onRenameDraft={handleRenameDraft}
+                onDeleteDraft={handleDeleteDraft}
+              />
+            </div>
           </div>
 
           <div className="reveal-up [animation-delay:170ms]">
@@ -1559,6 +1407,8 @@ export default function HomePage() {
               brandImageReady={Boolean(uploadedBrandImageUrl)}
               referenceImageUrl={referenceImageUrl}
               onReferenceImageUrlChange={handleReferenceImageUrlChange}
+              imageAngle={imageAngle}
+              onImageAngleChange={setImageAngle}
               generationStatus={previewStatus}
               generationProgressMessage={generationProgressMessage ?? undefined}
               videoUrl={videoUrl}
@@ -1568,6 +1418,133 @@ export default function HomePage() {
           </div>
         </div>
       </div>
+
+      {/* Unified notification popup */}
+      {notificationModal && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-[#0f2a1d]/28 px-4 backdrop-blur-[1px]">
+          <div
+            className={`w-full max-w-md rounded-2xl border p-5 shadow-[0_20px_50px_rgba(27,79,55,0.26)] md:p-6 ${
+              notificationModal.type === "error"
+                ? "border-[#f2bfbf] bg-[#fff1f1]"
+                : notificationModal.type === "warning"
+                ? "border-amber-200 bg-[#fffbf0]"
+                : "border-[#b9e6ce] bg-[#f3fbf7]"
+            }`}
+          >
+            <p
+              className={`text-xs font-semibold uppercase tracking-wide ${
+                notificationModal.type === "error"
+                  ? "text-[#b12b2b]"
+                  : notificationModal.type === "warning"
+                  ? "text-amber-600"
+                  : "text-[#3f7a5f]"
+              }`}
+            >
+              {notificationModal.type === "error"
+                ? "Lỗi"
+                : notificationModal.type === "warning"
+                ? "Cảnh báo"
+                : "Thông báo"}
+            </p>
+            <h3
+              className={`mt-1 text-xl font-bold md:text-2xl ${
+                notificationModal.type === "error"
+                  ? "text-[#b12b2b]"
+                  : notificationModal.type === "warning"
+                  ? "text-amber-700"
+                  : "text-[#0f8f4e]"
+              }`}
+            >
+              {notificationModal.title}
+            </h3>
+            <p
+              className={`mt-3 text-sm leading-relaxed md:text-base ${
+                notificationModal.type === "error"
+                  ? "text-[#7a2020]"
+                  : notificationModal.type === "warning"
+                  ? "text-[#5a4a1a]"
+                  : "text-[#365f4c]"
+              }`}
+            >
+              {notificationModal.message}
+            </p>
+            <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setNotificationModal(null)}
+                className={`inline-flex h-10 items-center justify-center rounded-xl border px-4 text-sm font-semibold transition ${
+                  notificationModal.type === "error"
+                    ? "border-[#f2bfbf] bg-white text-[#b12b2b] hover:border-[#e08080]"
+                    : notificationModal.type === "warning"
+                    ? "border-amber-200 bg-white text-amber-700 hover:border-amber-300"
+                    : "border-[#9fdab9] bg-white text-[#1f734d] hover:border-[#73c99d]"
+                }`}
+              >
+                Đóng
+              </button>
+              {notificationModal.retryAction && (
+                <button
+                  type="button"
+                  onClick={notificationModal.retryAction}
+                  className={`inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold text-white transition ${
+                    notificationModal.type === "warning"
+                      ? "bg-amber-500 hover:bg-amber-600"
+                      : "bg-[#0db461] hover:bg-[#0aa757]"
+                  }`}
+                >
+                  Thử lại
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generation result popup */}
+      {generationResultModal && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-[#0f2a1d]/28 px-4 backdrop-blur-[1px]">
+          <div className="w-full max-w-md rounded-2xl border border-[#b9e6ce] bg-[#f3fbf7] p-5 shadow-[0_20px_50px_rgba(27,79,55,0.26)] md:p-6">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#3f7a5f]">
+              Kết quả tạo video
+            </p>
+            <h3
+              className={`mt-1 text-xl font-bold md:text-2xl ${
+                generationResultModal.status === "completed"
+                  ? "text-[#0f8f4e]"
+                  : "text-[#b12b2b]"
+              }`}
+            >
+              {generationResultModal.status === "completed"
+                ? "Tạo video thành công"
+                : "Tạo video thất bại"}
+            </h3>
+            <p className="mt-3 text-sm leading-relaxed text-[#365f4c] md:text-base">
+              {generationResultModal.message}
+            </p>
+
+            <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+              {generationResultModal.status === "completed" && videoUrl ? (
+                <a
+                  href={videoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-10 items-center justify-center rounded-xl border border-[#9fdab9] bg-white px-4 text-sm font-semibold text-[#1f734d] transition hover:border-[#73c99d]"
+                >
+                  Mở video
+                </a>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={() => setGenerationResultModal(null)}
+                className="inline-flex h-10 items-center justify-center rounded-xl bg-[#0db461] px-4 text-sm font-semibold text-white transition hover:bg-[#0aa757]"
+              >
+                Đã hiểu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

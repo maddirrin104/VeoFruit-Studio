@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { prisma } from "@/lib/prisma";
-import { buildVideoPrompt, generateVideoWithVeo3 } from "@/lib/veo3";
+import { buildVideoPrompt, buildGen4TurboPrompt, generateVideoWithVeo3, Veo3Error, type Veo3Model } from "@/lib/veo3";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { Prisma } from "@/generated/prisma";
@@ -9,6 +9,7 @@ import {
   RunwayGenerationError,
   generateVideoWithRunway,
   mapAspectRatioToRunwayRatio,
+  type RunwayModel,
 } from "@/lib/runway";
 import {
   KlingGenerationError,
@@ -30,12 +31,16 @@ import { getRuntimeSettings } from "@/lib/runtime-settings";
 import {
   mixBackgroundMusic,
   optimizeVoiceOverAudio,
+  padOrTrimAudioToSeconds,
+  generateSilenceBuffer,
+  concatenateAudioBuffers,
+  muxAudioIntoVideoFile,
 } from "@/lib/audio-postprocess";
-import { buildFilesApiPath, getRuntimeMediaPath } from "@/lib/runtime-path";
+import { buildFilesApiPath, getRuntimeMediaPath, resolvePublicPathFromRequestPath } from "@/lib/runtime-path";
 import { ensurePlayableMp3Buffer } from "@/lib/audio-validation";
 import { CreateGenerationRequest, WorkflowMode } from "@/types/studio";
 import { downloadAndSaveVideo } from "@/lib/video-storage";
-import { parseScriptIntoScenes, buildSceneSlotsForClips } from "@/lib/scene-parser";
+import { parseScriptIntoScenes, buildSceneSlotsForClips, type ParsedScene } from "@/lib/scene-parser";
 import { concatenateVideoFiles } from "@/lib/video-concat";
 
 type VideoProjectRecord = NonNullable<
@@ -362,6 +367,11 @@ async function generateAudioForGeneration({
     status: "skipped",
   };
 
+  if (audioConfig?.audioEnabled === false) {
+    console.log(`[Generation ${generationId}] Audio disabled by user — skipping audio generation.`);
+    return voiceSettings;
+  }
+
   const fptConfigured = await isFptConfigured();
 
   if (!fptConfigured) {
@@ -470,15 +480,194 @@ async function generateAudioForGeneration({
     };
   } catch (audioError) {
     console.error(`[Generation ${generationId}] Voice-over failed:`, audioError);
+    const isTimeoutError = (audioError as Error)?.message?.includes?.("404");
+
+    // Fallback: Try to use latest preview voice file
+    try {
+      const audioDir = getRuntimeMediaPath("generated-audio");
+      const files = await fs.readdir(audioDir);
+      const previewVoiceFiles = files
+        .filter((f) => f.startsWith("voice-preview-") && f.endsWith(".mp3"))
+        .sort()
+        .reverse();
+
+      if (previewVoiceFiles.length > 0) {
+        console.warn(`[Generation ${generationId}] Using latest preview voice: ${previewVoiceFiles[0]}`);
+        const previewFilePath = path.join(audioDir, previewVoiceFiles[0]);
+        const previewBuffer = await fs.readFile(previewFilePath);
+        const outputExt = audioConfig.outputFormat === "wav" ? "mp3" : audioConfig.outputFormat;
+        const audioFileName = buildAudioFileName(`gen-${generationId}`, outputExt);
+        const audioUrl = await persistAudio(previewBuffer, audioFileName);
+
+        const errorMsg = "📢 Tạm thời dùng preview voice (FPT TTS không phản hồi)";
+        return {
+          ...audioConfig,
+          provider: "fpt-ai",
+          narrationMode,
+          status: "completed",
+          audioUrl,
+          error: errorMsg,
+          fallback: "preview-voice",
+        };
+      }
+    } catch (previewFallbackError) {
+      console.warn(`[Generation ${generationId}] Preview voice fallback failed:`, previewFallbackError);
+    }
+
+    // Fallback 2: Generate silence audio
+    console.warn(`[Generation ${generationId}] Generating silence audio as last resort...`);
+    const silenceBuffer = await generateSilenceBuffer(videoConfig.durationSeconds);
+    const outputExt = audioConfig.outputFormat === "wav" ? "mp3" : audioConfig.outputFormat;
+    const audioFileName = buildAudioFileName(`gen-${generationId}`, outputExt);
+    const audioUrl = await persistAudio(silenceBuffer, audioFileName);
+
+    const errorMsg = isTimeoutError
+      ? "FPT TTS không phản hồi (có thể service bảo trì hoặc account hết quota). Video được tạo với âm thanh im lặng."
+      : (audioError as Error)?.message || "Không thể tạo voice-over tự động. Video được tạo với âm thanh im lặng.";
+
     return {
       ...audioConfig,
       provider: "fpt-ai",
       narrationMode,
-      status: "failed",
-      error:
-        (audioError as Error)?.message ||
-        "Không thể tạo voice-over tự động. Video vẫn được tạo thành công.",
+      status: "completed",
+      audioUrl,
+      error: errorMsg,
+      fallback: "silence",
     };
+  }
+}
+
+async function generatePerSceneAudioForGeneration({
+  generationId,
+  sceneSlots,
+  translatedSlots,
+  audioConfig,
+  videoConfig,
+  narrationTextFallback,
+}: {
+  generationId: string;
+  sceneSlots: ParsedScene[];
+  translatedSlots: ParsedScene[];
+  audioConfig: CreateGenerationRequest["audioConfig"];
+  videoConfig: CreateGenerationRequest["videoConfig"];
+  narrationTextFallback: string;
+}): Promise<Prisma.InputJsonObject> {
+  const narrationMode =
+    audioConfig?.narrationMode === "script_read_along"
+      ? "script_read_along"
+      : "separate_voiceover";
+
+  const fptConfigured = await isFptConfigured();
+  if (!fptConfigured) {
+    return {
+      ...audioConfig,
+      provider: "fpt-ai",
+      narrationMode,
+      status: "skipped",
+      reason: "FPT_AI_API_KEY is not configured",
+    };
+  }
+
+  const CLIP_DURATION = 10;
+
+  const hasAnyVoiceover = sceneSlots.some((rawScene, i) => {
+    const translatedScene = translatedSlots[i];
+    return Boolean((translatedScene.voiceover || rawScene.voiceover || "").trim());
+  });
+
+  if (!hasAnyVoiceover) {
+    console.info(`[Generation ${generationId}] No per-scene voiceover found, using single TTS fallback`);
+    return generateAudioForGeneration({ generationId, narrationTextForSync: narrationTextFallback, audioConfig, videoConfig });
+  }
+
+  try {
+    const voiceDiagnostic = await buildFptVoiceDiagnosticConfig({
+      voiceType: audioConfig.voiceGender,
+      language: audioConfig.language,
+      readSpeed: audioConfig.readSpeed,
+      emotionIntensity: audioConfig.emotionIntensity,
+      outputFormat: audioConfig.outputFormat,
+    });
+
+    const sceneAudioResults = await Promise.allSettled(
+      sceneSlots.map(async (rawScene, index) => {
+        const translatedScene = translatedSlots[index];
+        const voiceoverText = (translatedScene.voiceover || rawScene.voiceover || "").trim();
+
+        if (!voiceoverText) {
+          return generateSilenceBuffer(CLIP_DURATION);
+        }
+
+        const audioBuffer = await generateVoiceOverWithFpt({
+          text: voiceoverText,
+          settings: {
+            voiceType: audioConfig.voiceGender,
+            language: audioConfig.language,
+            readSpeed: audioConfig.readSpeed,
+            emotionIntensity: audioConfig.emotionIntensity,
+            outputFormat: audioConfig.outputFormat,
+          },
+        });
+
+        const checked = await ensurePlayableMp3Buffer(audioBuffer, `Scene ${index + 1} voice`).catch(() => ({
+          buffer: audioBuffer,
+          durationSeconds: undefined,
+        }));
+
+        return padOrTrimAudioToSeconds(checked.buffer, CLIP_DURATION);
+      })
+    );
+
+    const failedCount = sceneAudioResults.filter((r) => r.status === "rejected").length;
+    if (failedCount > 0) {
+      console.warn(`[Generation ${generationId}] ${failedCount}/${sceneSlots.length} per-scene TTS failed, falling back to single TTS`);
+      return generateAudioForGeneration({ generationId, narrationTextForSync: narrationTextFallback, audioConfig, videoConfig });
+    }
+
+    const sceneBuffers = sceneAudioResults.map((r) => (r as PromiseFulfilledResult<Buffer>).value);
+    const concatenatedBuffer = await concatenateAudioBuffers(sceneBuffers);
+
+    const withBgMusic = audioConfig.bgMusicEnabled
+      ? await mixBackgroundMusic({
+          voiceBuffer: concatenatedBuffer,
+          voiceDurationSeconds: sceneSlots.length * CLIP_DURATION,
+          outputExtension: "mp3",
+        })
+      : { buffer: concatenatedBuffer, mixed: false as const, reason: undefined };
+
+    const stableVoice = await ensurePlayableMp3Buffer(
+      withBgMusic.buffer,
+      "Per-scene concatenated voice"
+    ).catch(() => ({ buffer: concatenatedBuffer, durationSeconds: undefined }));
+
+    const outputExt = audioConfig.outputFormat === "wav" ? "mp3" : audioConfig.outputFormat;
+    const audioFileName = buildAudioFileName(`gen-${generationId}`, outputExt);
+    const audioUrl = await persistAudio(stableVoice.buffer, audioFileName);
+
+    return {
+      ...audioConfig,
+      provider: "fpt-ai",
+      narrationMode,
+      voiceId: voiceDiagnostic.voice,
+      voiceConfig: {
+        speed: voiceDiagnostic.speed,
+        outputFormat: voiceDiagnostic.outputFormat,
+      },
+      status: "completed",
+      audioUrl,
+      postProcessing: {
+        perScene: true,
+        clipDurationSeconds: CLIP_DURATION,
+        sceneCount: sceneSlots.length,
+        backgroundMusicEnabled: Boolean(audioConfig.bgMusicEnabled),
+        backgroundMusicMixed: withBgMusic.mixed,
+        backgroundMusicNote: withBgMusic.reason,
+      },
+    };
+  } catch (audioError) {
+    console.error(`[Generation ${generationId}] Per-scene voice-over failed:`, audioError);
+    console.warn(`[Generation ${generationId}] Falling back to single TTS`);
+    return generateAudioForGeneration({ generationId, narrationTextForSync: narrationTextFallback, audioConfig, videoConfig });
   }
 }
 
@@ -505,7 +694,11 @@ async function generateSingleClip(
   promptImageUrl: string | undefined,
 ): Promise<string> {
   if (aiProvider === "veo3") {
-    const veo3Result = await generateVideoWithVeo3(prompt, Math.min(videoConfig.durationSeconds, 30));
+    const veo3Models: Veo3Model[] = ["veo-3.1-generate-preview", "veo-3.1-fast", "veo-3.1-lite"];
+    const veo3Model = veo3Models.includes(videoConfig.aiModel as Veo3Model)
+      ? (videoConfig.aiModel as Veo3Model)
+      : "veo-3.1-fast";
+    const veo3Result = await generateVideoWithVeo3(prompt, Math.min(videoConfig.durationSeconds, 30), veo3Model);
     console.log(`[Generation ${generationId}] ✅ Veo3 clip ready: ${veo3Result.operationId}`);
     return veo3Result.videoUrl;
   }
@@ -534,15 +727,51 @@ async function generateSingleClip(
   }
 
   // Runway
+  const runwayModels: RunwayModel[] = ["gen4.5", "gen4_turbo"];
+  const runwayModel = runwayModels.includes(videoConfig.aiModel as RunwayModel)
+    ? (videoConfig.aiModel as RunwayModel)
+    : "gen4.5";
+
   const runwayResult = await generateVideoWithRunway({
     prompt,
-    model: "gen4.5",
-    ratio: mapAspectRatioToRunwayRatio(videoConfig.aspectRatio),
+    model: runwayModel,
+    ratio: mapAspectRatioToRunwayRatio(videoConfig.aspectRatio, runwayModel),
     durationSeconds: Math.min(videoConfig.durationSeconds, 10),
     promptImageUrl,
   });
   console.log(`[Generation ${generationId}] ✅ Runway clip ready`);
   return runwayResult.videoUrl;
+}
+
+async function generateSingleClipWithRetry(
+  generationId: string,
+  prompt: string,
+  aiProvider: string,
+  videoConfig: CreateGenerationRequest["videoConfig"],
+  promptImageUrl: string | undefined,
+  maxRetries = 1,
+): Promise<string> {
+  let lastError: Error | undefined;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      // On retry, strip the image to force text-only fallback — but NOT for gen4_turbo which requires image
+      const canFallbackToText = videoConfig.aiModel !== "gen4_turbo";
+      const imageUrl = (attempt > 0 && promptImageUrl && canFallbackToText) ? undefined : promptImageUrl;
+      if (attempt > 0) {
+        const delaySec = attempt * 5;
+        console.warn(`[Generation ${generationId}] Retrying clip (attempt ${attempt + 1}/${maxRetries + 1})${imageUrl !== promptImageUrl ? " without reference image" : ""}...`);
+        await new Promise((resolve) => setTimeout(resolve, delaySec * 1000));
+      }
+      return await generateSingleClip(generationId, prompt, aiProvider, videoConfig, imageUrl);
+    } catch (error) {
+      lastError = error as Error;
+      const isRetryable = error instanceof RunwayGenerationError && error.retryable;
+      if (!isRetryable || attempt >= maxRetries) break;
+    }
+  }
+
+  throw lastError;
 }
 
 /**
@@ -566,6 +795,7 @@ async function generateVideoInBackground(
   },
   workflowMode?: WorkflowMode
 ) {
+  const aiProvider = workflowMode === "veo3-direct" ? "veo3" : (videoConfig.aiProvider || "runway");
   try {
     await prisma.videoGeneration.update({
       where: { id: generationId },
@@ -620,9 +850,19 @@ async function generateVideoInBackground(
       readSpeed: audioConfig.readSpeed,
     });
 
+    // Limit narration text to prevent FPT TTS timeout (similar to preview voice limit)
+    const narrationTextLimited = narrationTextForSync.length > 400
+      ? narrationTextForSync.substring(0, 400).trim()
+      : narrationTextForSync;
+
+    console.log(`[Generation ${generationId}] Narration text length: ${narrationTextLimited.length}`, {
+      original: narrationTextForSync.length,
+      text: narrationTextLimited.substring(0, 100) + (narrationTextLimited.length > 100 ? "..." : ""),
+    });
+
     const translatedPromptContext = await translatePromptContextToEnglish({
       ...promptContext,
-      narrationGuide: narrationTextForSync,
+      narrationGuide: narrationTextLimited,
     });
 
     // Shared prompt builder options (used for both single and multi-clip)
@@ -644,7 +884,6 @@ async function generateVideoInBackground(
 
     // When both product + brand images exist, prioritize brand image as the scene anchor
     const promptImageUrl = hasBrandBackgroundImage ? brandBackgroundImageUrl : referenceImageUrl;
-    const aiProvider = workflowMode === "veo3-direct" ? "veo3" : (videoConfig.aiProvider || "runway");
 
     if (promptImageUrl) {
       console.log(`[Generation ${generationId}] Image-to-video: ${promptImageUrl.substring(0, 80)}...`);
@@ -657,18 +896,8 @@ async function generateVideoInBackground(
 
     console.log(`[Generation ${generationId}] Starting ${aiProvider} (${clipsNeeded} clip${clipsNeeded > 1 ? "s" : ""}) + FPT audio in parallel...`);
 
-    // Audio always runs in parallel regardless of clip count
-    const audioPromise = generateAudioForGeneration({
-      generationId,
-      narrationTextForSync,
-      audioConfig,
-      videoConfig,
-    }).then(settings => {
-      console.log(`[Generation ${generationId}] ✅ Audio generation completed`);
-      return settings;
-    });
-
     let finalVideoUrl: string;
+    let audioPromise: Promise<Prisma.InputJsonObject>;
 
     if (clipsNeeded > 1) {
       // ── Multi-scene: generate one 10 s clip per scene then concatenate ──
@@ -684,6 +913,19 @@ async function generateVideoInBackground(
         translatedScenes.length > 0 ? translatedScenes : sceneSlots,
         clipsNeeded
       );
+
+      // Start per-scene TTS in parallel with video clip generation
+      audioPromise = generatePerSceneAudioForGeneration({
+        generationId,
+        sceneSlots,
+        translatedSlots,
+        audioConfig,
+        videoConfig,
+        narrationTextFallback: narrationTextForSync,
+      }).then((settings) => {
+        console.log(`[Generation ${generationId}] ✅ Audio generation completed`);
+        return settings;
+      });
 
       const clipPaths: string[] = [];
 
@@ -721,7 +963,7 @@ async function generateVideoInBackground(
 
         console.log(`[Generation ${generationId}] 🎬 Generating clip ${sceneIdx + 1}/${clipsNeeded}...`);
 
-        const clipVideoUrl = await generateSingleClip(
+        const clipVideoUrl = await generateSingleClipWithRetry(
           generationId,
           scenePrompt,
           aiProvider,
@@ -752,21 +994,54 @@ async function generateVideoInBackground(
       finalVideoUrl = buildFilesApiPath("uploads", "videos", `${generationId}.mp4`);
       console.log(`[Generation ${generationId}] ✅ Multi-scene video ready: ${finalVideoUrl}`);
     } else {
-      // ── Single clip: existing behavior ──
-      const fullPrompt = buildVideoPrompt(
-        translatedPromptContext.script || translatedPromptContext.storyTopic || project.storyTopic || "Fruit product video",
-        imageConfig.emotionStyle,
-        imageConfig.visualStyle,
-        imageConfig.motionIntensity,
-        {
-          ...sharedPromptOptions,
-          numberOfScenes: promptContext.numberOfScenes,
-          transitionEnabled: imageConfig.transitionEnabled,
-          narrationGuide: translatedPromptContext.narrationGuide || narrationTextForSync,
-        }
-      );
+      // ── Single clip: start audio in parallel then generate clip ──
+      audioPromise = generateAudioForGeneration({
+        generationId,
+        narrationTextForSync: narrationTextLimited,
+        audioConfig,
+        videoConfig,
+      }).then((settings) => {
+        console.log(`[Generation ${generationId}] ✅ Audio generation completed`);
+        return settings;
+      });
 
-      const singleVideoUrl = await generateSingleClip(
+      let fullPrompt: string;
+      if (videoConfig.aiModel === "gen4_turbo") {
+        fullPrompt = buildGen4TurboPrompt({
+          storyTopic: translatedPromptContext.storyTopic || project.storyTopic || undefined,
+          script: translatedPromptContext.script,
+          characterDescription: translatedPromptContext.characterDescription,
+          sceneLocation: translatedPromptContext.sceneLocation,
+          emotionStyle: imageConfig.emotionStyle,
+          visualStyle: imageConfig.visualStyle,
+          motionIntensity: imageConfig.motionIntensity,
+          contentTone: translatedPromptContext.contentTone,
+          imageAngle: imageConfig.imageAngle,
+        });
+        console.log(`[Generation ${generationId}] Gen4Turbo prompt (${fullPrompt.length} chars):`, fullPrompt);
+      } else {
+        const primaryVisual = translatedPromptContext.script || translatedPromptContext.storyTopic || project.storyTopic || "Fruit product video";
+        const primaryNarration: string | undefined = translatedPromptContext.narrationGuide || narrationTextForSync;
+        fullPrompt = buildVideoPrompt(
+          primaryVisual,
+          imageConfig.emotionStyle,
+          imageConfig.visualStyle,
+          imageConfig.motionIntensity,
+          {
+            ...sharedPromptOptions,
+            numberOfScenes: promptContext.numberOfScenes,
+            transitionEnabled: imageConfig.transitionEnabled,
+            narrationGuide: primaryNarration,
+          }
+        );
+      }
+
+      await prisma.videoGeneration.update({
+        where: { id: generationId },
+        data: { thumbnailUrl: "runway:processing" },
+      });
+
+      const singleVideoUrl = await generateSingleClipWithRetry(
         generationId,
         fullPrompt,
         aiProvider,
@@ -785,6 +1060,42 @@ async function generateVideoInBackground(
     }
 
     const voiceSettings = await audioPromise;
+    let muxErrorMessage: string | undefined;
+
+    // Mux audio into the locally saved video so preview and playback have audio embedded
+    if (finalVideoUrl.startsWith("/api/files/")) {
+      const audioUrl = getAudioUrlFromVoiceSettings(voiceSettings as Prisma.JsonValue);
+      if (audioUrl) {
+        const videoFilePath = resolvePublicPathFromRequestPath(finalVideoUrl);
+        const audioFilePath = resolvePublicPathFromRequestPath(audioUrl);
+
+        if (videoFilePath && audioFilePath) {
+          try {
+            console.log(`[Generation ${generationId}] Muxing audio into video...`, {
+              video: videoFilePath,
+              audio: audioFilePath,
+            });
+            await muxAudioIntoVideoFile(videoFilePath, audioFilePath);
+            console.log(`[Generation ${generationId}] ✅ Audio muxed into video`);
+          } catch (muxError) {
+            const msg = muxError instanceof Error ? muxError.message : String(muxError);
+            muxErrorMessage = msg;
+            console.error(`[Generation ${generationId}] ⚠️ Mux error (video will have no audio):`, msg);
+          }
+        } else {
+          muxErrorMessage = `Không thể ánh xạ đường dẫn file (video: ${!!videoFilePath}, audio: ${!!audioFilePath})`;
+          console.warn(`[Generation ${generationId}] ⚠️ Mux skipped — path resolution failed`);
+        }
+      } else {
+        console.warn(`[Generation ${generationId}] No audio URL in voice settings — mux skipped`);
+      }
+    } else {
+      console.warn(`[Generation ${generationId}] Video not saved locally — mux skipped: ${finalVideoUrl}`);
+    }
+
+    const finalVoiceSettings: Prisma.InputJsonObject = muxErrorMessage
+      ? { ...(voiceSettings as Prisma.JsonObject), muxError: muxErrorMessage }
+      : (voiceSettings as Prisma.InputJsonObject);
 
     await prisma.videoGeneration.update({
       where: { id: generationId },
@@ -792,7 +1103,7 @@ async function generateVideoInBackground(
         status: "completed",
         outputUrl: finalVideoUrl,
         thumbnailUrl: null,
-        voiceSettings,
+        voiceSettings: finalVoiceSettings,
       },
     });
 
@@ -801,10 +1112,16 @@ async function generateVideoInBackground(
     console.error(`[Generation ${generationId}] ❌ Generation failed:`, error);
 
     const fallbackMessage = "Không thể tạo video lúc này. Vui lòng thử lại sau.";
-    const errorMessage =
-      error instanceof RunwayGenerationError || error instanceof KlingGenerationError
-        ? error.message
-        : (error as Error)?.message || fallbackMessage;
+    const providerLabel =
+      error instanceof RunwayGenerationError ? "[RunwayML] " :
+      error instanceof KlingGenerationError  ? "[Kling AI] " :
+      error instanceof Veo3Error             ? "[Google Veo3] " :
+      aiProvider === "veo3"    ? "[Google Veo3] " :
+      aiProvider === "kling"   ? "[Kling AI] " :
+      "[RunwayML] ";
+    const rawMessage = (error as Error)?.message || fallbackMessage;
+    const alreadyLabeled = /^\[(RunwayML|Kling AI|Google Veo3|FPT AI)\]/i.test(rawMessage);
+    const errorMessage = alreadyLabeled ? rawMessage : `${providerLabel}${rawMessage}`;
 
     await prisma.videoGeneration.update({
       where: { id: generationId },

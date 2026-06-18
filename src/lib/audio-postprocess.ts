@@ -61,24 +61,31 @@ async function canAccessFile(filePath: string): Promise<boolean> {
   }
 }
 
+// Electron intercepts fs.access() for paths inside .asar archives and returns true,
+// but the OS cannot spawn binaries from inside an asar archive (only .asar.unpacked works).
+function isInsideAsar(filePath: string): boolean {
+  return /\.asar[\\/]/i.test(filePath) && !/\.asar\.unpacked[\\/]/i.test(filePath);
+}
+
 async function resolveFfmpegBinaryPath(): Promise<string> {
   const candidates: string[] = [];
 
   if (ffmpegPath) {
     const rootAliasPath = normalizeRootAliasPath(ffmpegPath);
-    candidates.push(ffmpegPath);
-    candidates.push(rootAliasPath);
+    // Prioritize .asar.unpacked variants — these are the actual files on disk.
     candidates.push(normalizeAsarUnpackedPath(ffmpegPath));
     candidates.push(normalizeAsarUnpackedPath(rootAliasPath));
+    candidates.push(ffmpegPath);
+    candidates.push(rootAliasPath);
   }
 
   const platformBinary = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
   const localNodeModulesPath = path.join(getAppRoot(), "node_modules", "ffmpeg-static", platformBinary);
-  candidates.push(localNodeModulesPath);
   candidates.push(normalizeAsarUnpackedPath(localNodeModulesPath));
+  candidates.push(localNodeModulesPath);
 
   for (const candidate of candidates) {
-    if (!candidate) {
+    if (!candidate || isInsideAsar(candidate)) {
       continue;
     }
 
@@ -97,6 +104,7 @@ function buildTempPath(extension: string): string {
 
 async function runFfmpeg(args: string[]): Promise<string> {
   const binary = await resolveFfmpegBinaryPath();
+  console.info(`[ffmpeg] binary=${binary} args=${args.slice(0, 4).join(" ")}...`);
 
   return new Promise((resolve, reject) => {
     const process = spawn(binary, args, {
@@ -296,6 +304,124 @@ export async function optimizeVoiceOverAudio(
       fs.unlink(trimmedPath),
       fs.unlink(stretchedPath),
     ]);
+  }
+}
+
+export async function padOrTrimAudioToSeconds(
+  inputBuffer: Buffer,
+  targetSeconds: number,
+  inputExtension: "mp3" | "wav" = "mp3"
+): Promise<Buffer> {
+  const inputPath = buildTempPath(inputExtension);
+  const outputPath = buildTempPath("mp3");
+
+  try {
+    await fs.writeFile(inputPath, inputBuffer);
+    await runFfmpeg([
+      "-y",
+      "-i", inputPath,
+      "-af", "apad",
+      "-t", String(targetSeconds),
+      "-c:a", "libmp3lame",
+      "-q:a", "3",
+      outputPath,
+    ]);
+    return await fs.readFile(outputPath);
+  } finally {
+    await Promise.allSettled([fs.unlink(inputPath), fs.unlink(outputPath)]);
+  }
+}
+
+export async function generateSilenceBuffer(durationSeconds: number): Promise<Buffer> {
+  const outputPath = buildTempPath("mp3");
+
+  try {
+    await runFfmpeg([
+      "-y",
+      "-f", "lavfi",
+      "-i", "anullsrc=r=44100:cl=mono",
+      "-t", String(durationSeconds),
+      "-c:a", "libmp3lame",
+      "-q:a", "3",
+      outputPath,
+    ]);
+    return await fs.readFile(outputPath);
+  } finally {
+    await Promise.allSettled([fs.unlink(outputPath)]);
+  }
+}
+
+export async function concatenateAudioBuffers(buffers: Buffer[]): Promise<Buffer> {
+  if (buffers.length === 0) throw new Error("No audio buffers to concatenate");
+  if (buffers.length === 1) return buffers[0];
+
+  const inputPaths: string[] = [];
+  const outputPath = buildTempPath("mp3");
+
+  try {
+    for (const buffer of buffers) {
+      const p = buildTempPath("mp3");
+      await fs.writeFile(p, buffer);
+      inputPaths.push(p);
+    }
+
+    const inputArgs = inputPaths.flatMap((p) => ["-i", p]);
+    const filterInputs = inputPaths.map((_, i) => `[${i}:a]`).join("");
+    const filterComplex = `${filterInputs}concat=n=${inputPaths.length}:v=0:a=1[out]`;
+
+    await runFfmpeg([
+      "-y",
+      ...inputArgs,
+      "-filter_complex", filterComplex,
+      "-map", "[out]",
+      "-c:a", "libmp3lame",
+      "-q:a", "3",
+      outputPath,
+    ]);
+
+    return await fs.readFile(outputPath);
+  } finally {
+    await Promise.allSettled([
+      ...inputPaths.map((p) => fs.unlink(p)),
+      fs.unlink(outputPath),
+    ]);
+  }
+}
+
+export async function muxAudioIntoVideoFile(
+  videoFilePath: string,
+  audioFilePath: string
+): Promise<void> {
+  // Validate files exist
+  try {
+    await fs.access(videoFilePath);
+  } catch {
+    throw new Error(`Video file not found: ${videoFilePath}`);
+  }
+
+  try {
+    await fs.access(audioFilePath);
+  } catch {
+    throw new Error(`Audio file not found: ${audioFilePath}`);
+  }
+
+  const tempOutput = buildTempPath("mp4");
+  try {
+    await runFfmpeg([
+      "-y",
+      "-i", videoFilePath,
+      "-i", audioFilePath,
+      "-map", "0:v:0",
+      "-map", "1:a:0",
+      "-c:v", "copy",
+      "-c:a", "aac",
+      "-af", "apad",
+      "-shortest",
+      tempOutput,
+    ]);
+    await fs.copyFile(tempOutput, videoFilePath);
+  } finally {
+    await Promise.allSettled([fs.unlink(tempOutput)]);
   }
 }
 

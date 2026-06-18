@@ -172,13 +172,25 @@ function findFreePort(startPort) {
 
 // ── Resolve the app icon path ─────────────────────────────────────────────────
 function getIconPath() {
+  const isWin = process.platform === "win32";
+
   if (app.isPackaged) {
-    // After packaging, icon is in the resources folder
+    // Windows: prefer .ico (embedded by electron-builder), fall back to .png
+    if (isWin) {
+      const packedIco = path.join(process.resourcesPath, "app-icon.ico");
+      if (fs.existsSync(packedIco)) return packedIco;
+    }
     const packed = path.join(process.resourcesPath, "app-icon.png");
     if (fs.existsSync(packed)) return packed;
   }
-  // Dev mode: use the file from the public folder
-  const devIcon = path.join(getProjectRoot(), "public", "app-icon.png");
+
+  // Dev mode: prefer .ico on Windows so taskbar shows the custom icon
+  const publicDir = path.join(getProjectRoot(), "public");
+  if (isWin) {
+    const icoIcon = path.join(publicDir, "app-icon.ico");
+    if (fs.existsSync(icoIcon)) return icoIcon;
+  }
+  const devIcon = path.join(publicDir, "app-icon.png");
   if (fs.existsSync(devIcon)) return devIcon;
   return undefined;
 }

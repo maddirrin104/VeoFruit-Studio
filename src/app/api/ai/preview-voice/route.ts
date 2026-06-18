@@ -1,6 +1,9 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
+
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
 import {
   buildAudioFileName,
   generateVoiceOverWithFpt,
@@ -25,7 +28,8 @@ interface PreviewVoiceRequest {
 }
 
 const AUDIO_OUTPUT_DIR = getRuntimeMediaPath("generated-audio");
-const PREVIEW_MAX_ATTEMPTS = 3;
+const PREVIEW_MAX_ATTEMPTS = 2;
+
 
 function isLikelyMp3Buffer(buffer: Buffer): boolean {
   if (buffer.byteLength < 2048) {
@@ -168,8 +172,8 @@ export async function POST(request: NextRequest) {
             language: body.audioConfig.language,
           },
         }, {
-          maxWaitMs: 20000,
-          maxJobAttempts: 1,
+          maxWaitMs: 55000,
+          maxJobAttempts: 2,
         });
 
         try {

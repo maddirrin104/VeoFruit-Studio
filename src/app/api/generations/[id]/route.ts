@@ -46,9 +46,16 @@ export async function GET(
       progressCurrent !== null && progressTotal !== null && progressTotal > 0
         ? Math.round((progressCurrent / progressTotal) * 100)
         : 0;
+
+    const isRunwayProcessing =
+      typeof generation?.thumbnailUrl === "string" &&
+      generation.thumbnailUrl === "runway:processing";
+
     const progressMessage =
       progressCurrent !== null && progressTotal !== null
         ? `Đang tạo cảnh ${progressCurrent}/${progressTotal}...`
+        : isRunwayProcessing
+        ? "Runway đang tạo video, vui lòng chờ... (thường mất 2–5 phút)"
         : null;
 
     const voiceSettings =
@@ -56,9 +63,28 @@ export async function GET(
         ? (generation.voiceSettings as Record<string, unknown>)
         : null;
 
-    const audioUrl =
+    const rawAudioUrl =
       voiceSettings && typeof voiceSettings.audioUrl === "string"
         ? voiceSettings.audioUrl
+        : undefined;
+
+    // Only expose the standalone audioUrl when mux failed or was skipped (external video URL).
+    // If mux succeeded, the audio is already embedded in the video — returning audioUrl here
+    // would cause PreviewPanel to play the MP3 in sync alongside the video's own audio track,
+    // creating a doubled/echo effect that the user perceives as "no audio".
+    const muxSucceeded =
+      rawAudioUrl &&
+      typeof generation.outputUrl === "string" &&
+      generation.outputUrl.startsWith("/api/files/") &&
+      !voiceSettings?.muxError;
+
+    const audioUrl = muxSucceeded ? undefined : rawAudioUrl;
+
+    const audioErrorMessage =
+      voiceSettings?.status === "failed" && typeof voiceSettings?.error === "string"
+        ? `[FPT AI TTS] ${voiceSettings.error}`
+        : typeof voiceSettings?.muxError === "string"
+        ? `[Audio Mux] Video đã tạo xong nhưng không thể ghép âm thanh vào file MP4. Lý do: ${voiceSettings.muxError}`
         : undefined;
 
     const voiceTypeApplied =
@@ -91,6 +117,7 @@ export async function GET(
         voiceIdApplied,
         voiceConfigApplied,
         errorMessage: persistedError,
+        audioErrorMessage,
         estimatedTimeRemaining: `${Math.ceil(estimatedRemaining)}s`,
         createdAt: generation.createdAt,
         updatedAt: generation.createdAt,

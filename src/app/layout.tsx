@@ -18,7 +18,12 @@ const sora = Sora({
 
 export const metadata: Metadata = {
   title: "VeoFruit Studio",
-  description: "Static UI for AI marketing video generator",
+  description: "AI marketing video generator for fruit products",
+  icons: {
+    icon: "/app-icon.png",
+    apple: "/app-icon.png",
+    shortcut: "/app-icon.png",
+  },
 };
 
 export default function RootLayout({

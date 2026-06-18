@@ -54,8 +54,29 @@ const sceneLocationOptions = [
   "Bếp gia đình",
 ] as const;
 
+// Thể loại không gắn với vị trí, dùng được cho mọi bối cảnh
+export const GENRE_PRESETS = [
+  "Giới thiệu sản phẩm",
+  "Review & Đánh giá thực tế",
+  "Hướng dẫn & Bí quyết",
+  "Kể chuyện thương hiệu",
+  "Quảng cáo theo mùa",
+  "So sánh và tư vấn chọn mua",
+  "Talkshow bán hàng",
+  "Minigame tương tác",
+  "Livestream demo",
+  "Nấu ăn cùng trái cây",
+  "Bí quyết bảo quản trái cây",
+  "Chia sẻ trải nghiệm cá nhân",
+  "Vlog ẩm thực",
+  "Mẹo lựa chọn thông minh",
+] as const;
+
+const SCENE_PRESETS = [3, 4, 5, 6];
+
 type ContentEditorSectionProps = {
   workflowMode: WorkflowMode;
+  durationSeconds: number;
   storyTopic: string;
   characterDescription: string;
   characterType: string;
@@ -74,7 +95,6 @@ type ContentEditorSectionProps = {
   onVideoGenreChange: (value: string) => void;
   onNumberOfScenesChange: (value: number) => void;
   onGenerateScript: () => void;
-  onRandomizeScript: () => void;
 };
 
 function FieldLabel({ children }: { children: string }) {
@@ -87,6 +107,7 @@ function FieldLabel({ children }: { children: string }) {
 
 export function ContentEditorSection({
   workflowMode,
+  durationSeconds,
   storyTopic,
   characterDescription,
   characterType,
@@ -105,8 +126,8 @@ export function ContentEditorSection({
   onVideoGenreChange,
   onNumberOfScenesChange,
   onGenerateScript,
-  onRandomizeScript,
 }: ContentEditorSectionProps) {
+  const isSingleSceneDuration = durationSeconds <= 15;
   const isManualScriptMode = workflowMode === "runway-manual";
   const [isScriptReaderOpen, setIsScriptReaderOpen] = useState(false);
   const [characterEntryMode, setCharacterEntryMode] = useState<"preset" | "custom">(
@@ -119,6 +140,36 @@ export function ContentEditorSection({
       ? "preset"
       : "custom"
   );
+
+  // Thể loại - Khác
+  const isCustomGenre = !GENRE_PRESETS.includes(videoGenre as (typeof GENRE_PRESETS)[number]);
+  const [customGenreInput, setCustomGenreInput] = useState(isCustomGenre ? videoGenre : "");
+  const genreSelectValue = isCustomGenre ? "__custom__" : videoGenre;
+
+  function handleGenreSelectChange(value: string) {
+    if (value === "__custom__") {
+      setCustomGenreInput("");
+      onVideoGenreChange("");
+    } else {
+      setCustomGenreInput("");
+      onVideoGenreChange(value);
+    }
+  }
+
+  // Số cảnh - Khác
+  const isCustomScenes = !SCENE_PRESETS.includes(numberOfScenes);
+  const [customScenesInput, setCustomScenesInput] = useState(isCustomScenes ? String(numberOfScenes) : "");
+
+  function handleScenesSelectChange(value: string) {
+    if (value === "__custom__") {
+      setCustomScenesInput("");
+      onNumberOfScenesChange(0);
+    } else {
+      setCustomScenesInput("");
+      onNumberOfScenesChange(Number(value.split(" ")[0]));
+    }
+  }
+
   const characterTypePresetValue = characterTypeOptions.includes(
     characterType as (typeof characterTypeOptions)[number]
   )
@@ -239,8 +290,14 @@ export function ContentEditorSection({
               {sceneEntryMode === "preset" ? (
                 <SelectField
                   value={sceneLocationPresetValue}
-                  onChange={onSceneLocationChange}
-                  options={[...sceneLocationOptions]}
+                  onChange={(value) => {
+                    if (value === "Khác...") {
+                      setSceneEntryMode("custom");
+                    } else {
+                      onSceneLocationChange(value);
+                    }
+                  }}
+                  options={[...sceneLocationOptions, "Khác..."]}
                 />
               ) : (
                 <TextInput
@@ -295,31 +352,69 @@ export function ContentEditorSection({
             <div className="space-y-2">
               <FieldLabel>Thể loại</FieldLabel>
               <SelectField
-                value={videoGenre}
-                onChange={onVideoGenreChange}
+                value={genreSelectValue}
+                onChange={handleGenreSelectChange}
                 options={[
-                  "Giới thiệu trái cây",
-                  "Giới thiệu trong cửa hàng",
-                  "Kể chuyện thương hiệu",
-                  "Quảng cáo theo mùa",
-                  "Review sản phẩm",
-                  "So sánh và tư vấn chọn mua",
-                  "Talkshow bán hàng",
-                  "Minigame tương tác",
-                  "Livestream demo",
-                  "Nấu ăn cùng trái cây",
-                  "Bí quyết bảo quản trái cây",
+                  ...GENRE_PRESETS.map((g) => ({ label: g, value: g })),
+                  { label: "Khác (tự nhập)...", value: "__custom__" },
                 ]}
               />
+              {isCustomGenre && (
+                <TextInput
+                  placeholder="VD: Phỏng vấn nông dân trồng trái cây..."
+                  value={customGenreInput}
+                  autoFocus
+                  onChange={(e) => {
+                    setCustomGenreInput(e.target.value);
+                    onVideoGenreChange(e.target.value);
+                  }}
+                />
+              )}
             </div>
 
             <div className="space-y-2">
               <FieldLabel>Số cảnh</FieldLabel>
-              <SelectField
-                value={`${numberOfScenes} cảnh`}
-                onChange={(value) => onNumberOfScenesChange(Number(value.split(" ")[0]))}
-                options={["3 cảnh", "4 cảnh", "5 cảnh", "6 cảnh"]}
-              />
+              {isSingleSceneDuration ? (
+                <div className="flex items-center gap-2 rounded-xl border border-[#c9e5d5] bg-[#f0f7f3] px-4 py-3">
+                  <span className="text-sm font-semibold text-[#16633f]">1 cảnh</span>
+                  <span className="text-xs text-[#5f8a72]">— tự động theo thời lượng {durationSeconds}s</span>
+                </div>
+              ) : (
+                <>
+                  <SelectField
+                    value={isCustomScenes ? "__custom__" : `${numberOfScenes} cảnh`}
+                    onChange={handleScenesSelectChange}
+                    options={[
+                      "3 cảnh",
+                      "4 cảnh",
+                      "5 cảnh",
+                      "6 cảnh",
+                      { label: "Khác (tự nhập)...", value: "__custom__" },
+                    ]}
+                  />
+                  {isCustomScenes && (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        placeholder="Số cảnh (1-20)"
+                        value={customScenesInput}
+                        autoFocus
+                        onChange={(e) => {
+                          setCustomScenesInput(e.target.value);
+                          const parsed = parseInt(e.target.value, 10);
+                          if (!isNaN(parsed) && parsed >= 1 && parsed <= 20) {
+                            onNumberOfScenesChange(parsed);
+                          }
+                        }}
+                        className="h-12 w-36 rounded-xl border border-[#9edfb9] bg-[#e6f5eb] px-4 text-sm text-[#1e4f3c] outline-none transition focus:border-[#11b861] focus:ring-2 focus:ring-[#11b861]/20"
+                      />
+                      <span className="text-sm text-[#5f8e78]">cảnh</span>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
 
@@ -337,17 +432,6 @@ export function ContentEditorSection({
                   <BookOpenText className="size-3.5" />
                   Chế độ đọc
                 </button>
-
-                {!isManualScriptMode && (
-                  <button
-                    type="button"
-                    onClick={onRandomizeScript}
-                    disabled={isGeneratingScript}
-                    className="rounded-full border border-[#9fdab9] bg-[#f1fbf5] px-4 py-2 text-xs font-semibold text-[#1d734e] transition hover:border-[#7fcea5]"
-                  >
-                    Random kịch bản
-                  </button>
-                )}
 
                 {isManualScriptMode ? (
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-[#f5d07a] bg-[#fefbf0] px-4 py-2 text-xs font-semibold text-[#7a5a10]">

@@ -1,3 +1,5 @@
+import https from "node:https";
+import http from "node:http";
 import {
   getVoiceEnvVarName,
   getVoiceProviderCode,
@@ -41,6 +43,26 @@ export interface FptVoiceDiagnosticConfig {
 
 const MIN_AUDIO_BUFFER_BYTES = 2048;
 
+// FPT hashes (text + voice) → deterministic CDN URL. A stale/failed job leaves that URL
+// permanently 404. Appending a random visible phrase forces FPT to compute a new hash.
+const CACHE_BUST_PHRASES = [
+  " Cảm ơn.",
+  " Xin.",
+  " Vâng.",
+  " Chúc.",
+  " Tuyệt.",
+  " Vui.",
+  " Tốt.",
+  " Hay.",
+  " Đẹp.",
+  " Tạm.",
+];
+
+export function bustFptCacheText(text: string): string {
+  const phrase = CACHE_BUST_PHRASES[Math.floor(Math.random() * CACHE_BUST_PHRASES.length)];
+  return text + phrase;
+}
+
 export interface FptGenerationOverrides {
   maxWaitMs?: number;
   maxJobAttempts?: number;
@@ -65,7 +87,8 @@ function normalizeReadSpeedForFpt(readSpeed: number): string {
   const clamped = Math.min(100, Math.max(0, Number.isFinite(readSpeed) ? readSpeed : 50));
   // Keep mapping conservative; FPT speed header is very sensitive and large values make
   // speech unnaturally fast (e.g. 10s script sounding ~5s).
-  const mapped = ((clamped - 50) / 50) * 1.2;
+  // Map: 0→-0.6, 50→0.0, 100→1.2. Clamp to [-0.6, 1.2] to ensure FPT can accept it.
+  const mapped = Math.max(-0.6, Math.min(1.2, ((clamped - 50) / 50) * 1.2));
   return mapped.toFixed(1);
 }
 
@@ -80,29 +103,65 @@ export async function buildFptVoiceDiagnosticConfig(
   };
 }
 
+// Use Node.js native http/https to poll FPT's async URL.
+// fetch() in Electron/Next.js packaged builds can cache the first 404 response,
+// causing every subsequent poll to return cached 404 even after FPT finishes.
+function nativeFetch(
+  url: string,
+  redirectsLeft = 5
+): Promise<{ status: number; buffer: Buffer }> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const lib = parsed.protocol === "https:" ? https : http;
+
+    const req = lib.get(url, (res) => {
+      const status = res.statusCode ?? 0;
+
+      // Follow redirects (3xx) — https.get() does not do this automatically
+      if (status >= 300 && status < 400 && res.headers.location && redirectsLeft > 0) {
+        res.resume(); // drain the response
+        resolve(nativeFetch(res.headers.location, redirectsLeft - 1));
+        return;
+      }
+
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () => resolve({ status, buffer: Buffer.concat(chunks) }));
+      res.on("error", reject);
+    });
+
+    req.setTimeout(12000, () => {
+      req.destroy(new Error("FPT poll request timed out"));
+    });
+    req.on("error", reject);
+  });
+}
+
 async function waitForAudioFromUrl(url: string, timeoutMs: number): Promise<Buffer> {
   const startedAt = Date.now();
   let attempt = 0;
   let lastStatus: number | undefined;
 
+  console.info(`[fpt-tts] polling audio URL: ${url} (timeout ${timeoutMs}ms)`);
+
   while (Date.now() - startedAt < timeoutMs) {
     attempt += 1;
 
     try {
-      const response = await fetch(url);
-      lastStatus = response.status;
+      const { status, buffer } = await nativeFetch(url);
+      lastStatus = status;
 
-      if (response.ok) {
-        const contentType = response.headers.get("content-type") || "";
-        if (contentType.includes("audio") || contentType.includes("octet-stream")) {
-          const buffer = Buffer.from(await response.arrayBuffer());
-          if (await isBufferLikelyPlayable(buffer)) {
-            return buffer;
-          }
+      console.info(`[fpt-tts] poll attempt ${attempt}: status=${status} size=${buffer.byteLength}${status === 200 ? "" : " (not ready)"}`);
+
+      if (status === 200) {
+        if (await isBufferLikelyPlayable(buffer)) {
+          console.info(`[fpt-tts] ✅ audio ready after ${attempt} attempts (${Math.round((Date.now() - startedAt) / 1000)}s)`);
+          return buffer;
         }
+        console.warn(`[fpt-tts] buffer not playable (too small or invalid header), continuing poll`);
       }
-    } catch {
-      // Keep polling when transient network errors happen.
+    } catch (fetchError) {
+      console.warn(`[fpt-tts] poll attempt ${attempt} error:`, fetchError);
     }
 
     const delayMs = Math.min(2200, 550 + attempt * 180);
@@ -157,12 +216,17 @@ async function requestFptTtsJob(
 
   if (!response.ok) {
     const raw = await response.text();
+    console.error(`[fpt-tts] job request failed: status=${response.status} body=${raw}`);
     throw new Error(`FPT TTS request failed: ${response.status} ${raw}`);
   }
 
   const contentType = response.headers.get("content-type") || "";
+  console.info(`[fpt-tts] job request sent: voice="${voiceConfig.voice}" speed="${voiceConfig.speed}" text_length=${input.text.length}`);
+  console.info(`[fpt-tts] job response: status=${response.status} content-type="${contentType}"`);
+
   if (contentType.includes("audio")) {
     const audioBuffer = Buffer.from(await response.arrayBuffer());
+    console.info(`[fpt-tts] sync audio response: ${audioBuffer.byteLength} bytes`);
     if (await isBufferLikelyPlayable(audioBuffer)) {
       return audioBuffer;
     }
@@ -181,6 +245,8 @@ async function requestFptTtsJob(
     message?: string;
   };
 
+  console.info(`[fpt-tts] async job payload:`, JSON.stringify(payload));
+
   if (typeof payload.error === "number" && payload.error !== 0) {
     throw new Error(payload.message || `FPT TTS error code ${payload.error}`);
   }
@@ -190,7 +256,9 @@ async function requestFptTtsJob(
     throw new Error("FPT TTS response did not include audio URL");
   }
 
-  return normalizeFptAudioUrl(audioUrl);
+  const normalizedUrl = normalizeFptAudioUrl(audioUrl);
+  console.info(`[fpt-tts] normalized audio URL: ${normalizedUrl}`);
+  return normalizedUrl;
 }
 
 async function isBufferLikelyPlayable(buffer: Buffer): Promise<boolean> {
@@ -238,14 +306,17 @@ export async function generateVoiceOverWithFpt(
     ? Math.max(8000, Number(overrides.maxWaitMs))
     : Number.isFinite(runtime.fptAudioWaitTimeoutMs)
     ? Math.max(10000, runtime.fptAudioWaitTimeoutMs)
-    : 45000;
+    : 55000;
   const ttsUrl = runtime.fptTtsUrl || "https://api.fpt.ai/hmi/tts/v5";
 
   let lastError: unknown;
 
   for (let jobAttempt = 1; jobAttempt <= maxJobAttempts; jobAttempt += 1) {
     try {
-      const requested = await requestFptTtsJob(input, voiceConfig, apiKey, ttsUrl);
+      // Append a fresh random phrase so FPT computes a new URL hash on every attempt.
+      // The same text+voice always returns the same stale 404 URL once a job has failed.
+      const bustInput = { ...input, text: bustFptCacheText(input.text) };
+      const requested = await requestFptTtsJob(bustInput, voiceConfig, apiKey, ttsUrl);
       if (Buffer.isBuffer(requested)) {
         return requested;
       }

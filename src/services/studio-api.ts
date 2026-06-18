@@ -11,7 +11,16 @@ type ApiResponse<T> = {
   data: T;
   message?: string;
   error?: string;
+  retryable?: boolean;
 };
+
+export class RetryableApiError extends Error {
+  readonly retryable = true;
+  constructor(message: string) {
+    super(message);
+    this.name = "RetryableApiError";
+  }
+}
 
 export type ProjectRecord = {
   id: string;
@@ -40,6 +49,7 @@ type GenerationRecord = {
   videoUrl?: string;
   audioUrl?: string;
   errorMessage?: string;
+  audioErrorMessage?: string;
   createdAt: string;
   updatedAt?: string;
 };
@@ -112,7 +122,11 @@ async function http<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T>
 
   const json = await parseApiJson<T>(response);
   if (!response.ok) {
-    throw new Error(json?.error || json?.message || `Request failed: ${response.status}`);
+    const message = json?.error || json?.message || `Request failed: ${response.status}`;
+    if (json?.retryable) {
+      throw new RetryableApiError(message);
+    }
+    throw new Error(message);
   }
 
   if (!json || typeof json !== "object" || !("data" in json)) {
@@ -174,12 +188,14 @@ export async function generateScript(payload: {
   videoGenre?: string;
   contentTone?: string;
   numberOfScenes?: number;
+  aiModel?: string;
   referenceImageUrl?: string;
   referenceImageName?: string;
   referenceImageSource?: "upload" | "url";
   brandBackgroundImageUrl?: string;
   brandBackgroundImageName?: string;
   brandBackgroundImageSource?: "upload" | "url";
+  imageAngle?: import("@/types/studio").ImageAngle;
 }): Promise<{
   script: string;
   estimatedDuration: string;
@@ -299,6 +315,60 @@ export async function saveRuntimeSettings(payload: Partial<RuntimeSettingsRecord
     method: "PATCH",
     body: JSON.stringify({ settings: payload }),
   });
+}
+
+export type ApiKeyProvider = "gemini" | "fpt" | "runway" | "kling";
+
+export async function testApiKey(payload: {
+  provider: ApiKeyProvider;
+  googleApiKey?: string;
+  fptApiKey?: string;
+  fptTtsUrl?: string;
+  runwayApiSecret?: string;
+  runwayApiBaseUrl?: string;
+  runwayApiVersion?: string;
+  klingAccessKeyId?: string;
+  klingAccessKeySecret?: string;
+}): Promise<{ ok: boolean; message: string }> {
+  return http<{ ok: boolean; message: string }>("/api/settings/test", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export type AuthStatus = {
+  hasPassword: boolean;
+  sessionValid: boolean;
+};
+
+export async function getSettingsAuthStatus(): Promise<AuthStatus> {
+  return http<AuthStatus>("/api/settings/auth");
+}
+
+export async function setupSettingsPassword(password: string): Promise<{ ok: boolean }> {
+  return http<{ ok: boolean }>("/api/settings/auth", {
+    method: "POST",
+    body: JSON.stringify({ action: "setup", password }),
+  });
+}
+
+export async function verifySettingsPassword(
+  password: string
+): Promise<{ ok: boolean; message?: string }> {
+  return http<{ ok: boolean; message?: string }>("/api/settings/auth", {
+    method: "POST",
+    body: JSON.stringify({ action: "verify", password }),
+  });
+}
+
+export async function revokeSettingsSession(): Promise<void> {
+  const response = await fetch("/api/settings/auth", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!response.ok) {
+    throw new Error("Lỗi xóa session");
+  }
 }
 
 export type { GenerationRecord, VideoConfigInput, ImageConfigInput, AudioConfigInput };

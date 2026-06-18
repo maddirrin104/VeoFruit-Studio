@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Music,
   Palette,
@@ -12,11 +13,68 @@ import { Card } from "@/components/ui/Card";
 import {
   RangeField,
   SelectField,
+  TextInput,
 } from "@/components/ui/FormControls";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { ToggleSwitch } from "@/components/ui/ToggleSwitch";
 import { getVoiceLabel, VOICE_DEFINITIONS, type VoiceType } from "@/lib/voice-options";
 import { parseVoiceLabel } from "@/lib/voice-parsing";
+
+const EMOTION_PRESETS = [
+  "Vật tươi",
+  "Năng lượng",
+  "Sang trọng",
+  "Tự nhiên",
+  "Ấm áp",
+  "Vui nhộn",
+  "Thanh lịch",
+  "Tinh tế",
+  "Truyền cảm hứng",
+  "Thân thiện",
+  "Mộc mạc",
+  "Sôi động",
+  "Yên bình",
+  "Cao cấp",
+  "Tươi mát mùa hè",
+];
+
+const VISUAL_PRESETS = [
+  "Cinematic",
+  "Realistic",
+  "Dreamy",
+  "Lifestyle",
+  "Documentary",
+  "Commercial",
+  "Minimalist",
+  "Vintage Film",
+  "Food Photography",
+  "Ultra Macro",
+  "Studio Lighting",
+  "Street Market",
+  "Natural Light",
+  "Moody",
+  "Color Pop",
+  "Soft Pastel",
+];
+
+const VISUAL_PRESET_LABELS: Record<string, string> = {
+  "Cinematic": "Cinematic - Điện ảnh",
+  "Realistic": "Realistic - Chân thực",
+  "Dreamy": "Dreamy - Mơ màng",
+  "Lifestyle": "Lifestyle - Đời sống",
+  "Documentary": "Documentary - Tài liệu",
+  "Commercial": "Commercial - Quảng cáo",
+  "Minimalist": "Minimalist - Tối giản",
+  "Vintage Film": "Vintage Film - Phim cổ điển",
+  "Food Photography": "Food Photography - Nhiếp ảnh ẩm thực",
+  "Ultra Macro": "Ultra Macro - Cận siêu chi tiết",
+  "Studio Lighting": "Studio Lighting - Ánh sáng studio",
+  "Street Market": "Street Market - Chợ đường phố",
+  "Natural Light": "Natural Light - Ánh sáng tự nhiên",
+  "Moody": "Moody - Tâm trạng",
+  "Color Pop": "Color Pop - Màu sắc nổi bật",
+  "Soft Pastel": "Soft Pastel - Màu pastel nhẹ",
+};
 
 type AiOptimizationSectionProps = {
   emotionStyle: string;
@@ -24,6 +82,7 @@ type AiOptimizationSectionProps = {
   motionIntensity: number;
   transitionEnabled: boolean;
   subjectConsistent: boolean;
+  audioEnabled: boolean;
   narrationMode: "script_read_along" | "separate_voiceover";
   voiceType: VoiceType;
   language: string;
@@ -39,6 +98,7 @@ type AiOptimizationSectionProps = {
   onMotionIntensityChange: (value: number) => void;
   onTransitionEnabledChange: (value: boolean) => void;
   onSubjectConsistentChange: (value: boolean) => void;
+  onAudioEnabledChange: (value: boolean) => void;
   onNarrationModeChange: (value: "script_read_along" | "separate_voiceover") => void;
   onVoiceTypeChange: (value: VoiceType) => void;
   onLanguageChange: (value: string) => void;
@@ -65,6 +125,7 @@ export function AiOptimizationSection({
   motionIntensity,
   transitionEnabled,
   subjectConsistent,
+  audioEnabled,
   narrationMode,
   voiceType,
   language,
@@ -80,6 +141,7 @@ export function AiOptimizationSection({
   onMotionIntensityChange,
   onTransitionEnabledChange,
   onSubjectConsistentChange,
+  onAudioEnabledChange,
   onNarrationModeChange,
   onVoiceTypeChange,
   onLanguageChange,
@@ -91,6 +153,36 @@ export function AiOptimizationSection({
   onReset,
   onGenerateVideo,
 }: AiOptimizationSectionProps) {
+  // Cảm xúc - Khác
+  const isCustomEmotion = !EMOTION_PRESETS.includes(emotionStyle);
+  const [customEmotionInput, setCustomEmotionInput] = useState(isCustomEmotion ? emotionStyle : "");
+
+  function handleEmotionSelectChange(value: string) {
+    if (value === "__custom__") {
+      setCustomEmotionInput("");
+      onEmotionStyleChange("");
+    } else {
+      setCustomEmotionInput("");
+      onEmotionStyleChange(value);
+    }
+  }
+
+  // Phong cách - Khác
+  const isCustomVisual = !VISUAL_PRESETS.includes(visualStyle);
+  const [customVisualInput, setCustomVisualInput] = useState(isCustomVisual ? visualStyle : "");
+
+  function handleVisualSelectChange(value: string) {
+    if (value === "__custom__") {
+      setCustomVisualInput("");
+      onVisualStyleChange("");
+    } else {
+      setCustomVisualInput("");
+      onVisualStyleChange(value);
+    }
+  }
+
+  const emotionSelectValue = isCustomEmotion ? "__custom__" : emotionStyle;
+  const visualSelectValue = isCustomVisual ? "__custom__" : (VISUAL_PRESET_LABELS[visualStyle] ? visualStyle : visualStyle);
 
   return (
     <div className="space-y-4">
@@ -105,58 +197,50 @@ export function AiOptimizationSection({
             <div className="space-y-2">
               <FieldLabel>Cảm xúc</FieldLabel>
               <SelectField
-                value={emotionStyle}
-                onChange={onEmotionStyleChange}
+                value={emotionSelectValue}
+                onChange={handleEmotionSelectChange}
                 options={[
-                  "Vật tươi",
-                  "Năng lượng",
-                  "Sang trọng",
-                  "Tự nhiên",
-                  "Ấm áp",
-                  "Vui nhộn",
-                  "Thanh lịch",
-                  "Tinh tế",
-                  "Truyền cảm hứng",
-                  "Thân thiện",
-                  "Mộc mạc",
-                  "Sôi động",
-                  "Yên bình",
-                  "Cao cấp",
-                  "Tươi mát mùa hè",
+                  ...EMOTION_PRESETS.map((e) => ({ label: e, value: e })),
+                  { label: "Khác (tự nhập)...", value: "__custom__" },
                 ]}
               />
+              {isCustomEmotion && (
+                <TextInput
+                  placeholder="VD: Trang trọng lễ hội, Mùa hè rực rỡ..."
+                  value={customEmotionInput}
+                  autoFocus
+                  onChange={(e) => {
+                    setCustomEmotionInput(e.target.value);
+                    onEmotionStyleChange(e.target.value);
+                  }}
+                />
+              )}
             </div>
 
             <div className="space-y-2">
               <FieldLabel>Phong cách</FieldLabel>
               <SelectField
-                value={visualStyle}
-                onChange={onVisualStyleChange}
+                value={isCustomVisual ? "__custom__" : visualStyle}
+                onChange={handleVisualSelectChange}
                 options={[
-                  { label: "Cinematic - Điện ảnh", value: "Cinematic" },
-                  { label: "Realistic - Chân thực", value: "Realistic" },
-                  { label: "Dreamy - Mơ màng", value: "Dreamy" },
-                  { label: "Lifestyle - Đời sống", value: "Lifestyle" },
-                  { label: "Documentary - Tài liệu", value: "Documentary" },
-                  { label: "Commercial - Quảng cáo", value: "Commercial" },
-                  { label: "Minimalist - Tối giản", value: "Minimalist" },
-                  { label: "Vintage Film - Phim cổ điển", value: "Vintage Film" },
-                  {
-                    label: "Food Photography - Nhiếp ảnh ẩm thực",
-                    value: "Food Photography",
-                  },
-                  { label: "Ultra Macro - Cận siêu chi tiết", value: "Ultra Macro" },
-                  {
-                    label: "Studio Lighting - Ánh sáng studio",
-                    value: "Studio Lighting",
-                  },
-                  { label: "Street Market - Chợ đường phố", value: "Street Market" },
-                  { label: "Natural Light - Ánh sáng tự nhiên", value: "Natural Light" },
-                  { label: "Moody - Tâm trạng", value: "Moody" },
-                  { label: "Color Pop - Màu sắc nổi bật", value: "Color Pop" },
-                  { label: "Soft Pastel - Màu pastel nhẹ", value: "Soft Pastel" },
+                  ...VISUAL_PRESETS.map((v) => ({
+                    label: VISUAL_PRESET_LABELS[v] ?? v,
+                    value: v,
+                  })),
+                  { label: "Khác (tự nhập)...", value: "__custom__" },
                 ]}
               />
+              {isCustomVisual && (
+                <TextInput
+                  placeholder="VD: Anime style, Watercolor, Flat design..."
+                  value={customVisualInput}
+                  autoFocus
+                  onChange={(e) => {
+                    setCustomVisualInput(e.target.value);
+                    onVisualStyleChange(e.target.value);
+                  }}
+                />
+              )}
             </div>
 
             <div className="space-y-2">
@@ -175,16 +259,16 @@ export function AiOptimizationSection({
                 <div className="grid grid-cols-2 gap-3">
                   <div className="flex items-center justify-between rounded-lg px-1 text-sm font-semibold text-[#2f7056]">
                     <span>Chuyển cảnh</span>
-                    <ToggleSwitch 
-                      checked={transitionEnabled} 
+                    <ToggleSwitch
+                      checked={transitionEnabled}
                       onClick={() => onTransitionEnabledChange(!transitionEnabled)}
                     />
                   </div>
 
                   <div className="flex items-center justify-between rounded-lg px-1 text-sm font-semibold text-[#2f7056]">
                     <span>Nhất quán chủ thể</span>
-                    <ToggleSwitch 
-                      checked={subjectConsistent} 
+                    <ToggleSwitch
+                      checked={subjectConsistent}
                       onClick={() => onSubjectConsistentChange(!subjectConsistent)}
                     />
                   </div>
@@ -195,12 +279,33 @@ export function AiOptimizationSection({
         </Card>
 
         <Card className="p-6 md:p-7">
-          <SectionHeading
-            title="Âm thanh & thuyết minh"
-            icon={<Volume2 className="size-5" />}
-          />
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-[#d4f4df] text-[#0eaf5f]">
+                <Volume2 className="size-4" />
+              </span>
+              <h2 className="whitespace-nowrap font-[family:var(--font-sora)] text-base font-semibold tracking-tight text-[#0d9d56]">
+                Âm thanh & thuyết minh
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-[#2f7056]">
+                {audioEnabled ? "Có âm thanh" : "Không âm thanh"}
+              </span>
+              <ToggleSwitch
+                checked={audioEnabled}
+                onClick={() => onAudioEnabledChange(!audioEnabled)}
+              />
+            </div>
+          </div>
 
-          <div className="space-y-5">
+          {!audioEnabled && (
+            <p className="rounded-xl border border-dashed border-[#c5dfd0] bg-[#f3faf6] px-4 py-3 text-sm text-[#5c9474]">
+              Video sẽ được tạo không có âm thanh / giọng đọc. Bật lại để cấu hình giọng đọc và nhạc nền.
+            </p>
+          )}
+
+          <div className={`space-y-5 ${audioEnabled ? "" : "pointer-events-none mt-4 opacity-30"}`}>
             <div className="space-y-2">
               <FieldLabel>Chế độ lồng tiếng</FieldLabel>
               <SelectField
@@ -240,6 +345,7 @@ export function AiOptimizationSection({
                     return (
                       <div
                         key={voice.id}
+                        onDoubleClick={isPreviewingVoice ? undefined : () => onPreviewVoice(voice.id)}
                         className={`flex min-h-11 items-center justify-between rounded-xl border px-3 py-2 ${
                           active
                             ? "border-[#0db461] bg-[#ecf9f2]"

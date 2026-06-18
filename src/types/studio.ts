@@ -27,6 +27,8 @@ export interface VideoConfigInput {
   durationSeconds: number;
 }
 
+export type ImageAngle = "eye_level" | "diagonal" | "close_up" | "top_down";
+
 export interface ImageConfigInput {
   emotionStyle: string;
   visualStyle: string;
@@ -42,9 +44,11 @@ export interface ImageConfigInput {
   brandBackgroundImageUrl?: string;
   brandBackgroundImageName?: string;
   brandBackgroundImageSource?: "upload" | "url";
+  imageAngle?: ImageAngle;
 }
 
 export interface AudioConfigInput {
+  audioEnabled: boolean;
   narrationMode: "script_read_along" | "separate_voiceover";
   voiceGender: VoiceType;
   language: string;

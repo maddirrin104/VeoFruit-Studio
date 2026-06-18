@@ -23,7 +23,12 @@ export function StudioHeader({ onSettingsClick }: StudioHeaderProps) {
           Tạo video giới thiệu trái cây tự động với AI
         </p>
 
-        <p className="mt-2 text-sm text-[#6e9a86]">Powered by Google DeepMind</p>
+        <div className="mt-2 flex items-center gap-2">
+          <p className="text-sm text-[#6e9a86]">Powered by Google DeepMind</p>
+          <span className="rounded-full border border-[#bde4cd] bg-[#e8f7ee] px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-[#0e7a42]">
+            v2.0
+          </span>
+        </div>
       </div>
 
       {/* Settings button — absolute top-right */}

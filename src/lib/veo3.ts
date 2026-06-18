@@ -166,9 +166,12 @@ interface VeoVideosOperation {
  * @param durationSeconds Duration of the video in seconds (5-120)
  * @returns Video URL and metadata
  */
+export type Veo3Model = "veo-3.1-generate-preview" | "veo-3.1-fast" | "veo-3.1-lite";
+
 export async function generateVideoWithVeo3(
   prompt: string,
-  durationSeconds: number = 15
+  durationSeconds: number = 15,
+  model: Veo3Model = "veo-3.1-fast"
 ): Promise<Veo3VideoResponse> {
   try {
     const runtime = await getRuntimeSettings();
@@ -186,15 +189,19 @@ export async function generateVideoWithVeo3(
     
     // Start video generation
     const modelsClient = genAI.models as unknown as {
-      generateVideos: (args: { model: string; prompt: string }) => Promise<VeoVideosOperation>;
+      generateVideos: (args: { model: string; prompt: string; config?: { durationSeconds?: number; numberOfVideos?: number; aspectRatio?: string } }) => Promise<VeoVideosOperation>;
     };
     const operationsClient = genAI.operations as unknown as {
       getVideosOperation: (args: { operation: VeoVideosOperation }) => Promise<VeoVideosOperation>;
     };
 
     let operation = await modelsClient.generateVideos({
-      model: "veo-3.1-generate-preview",
+      model: model,
       prompt: prompt,
+      config: {
+        numberOfVideos: 1,
+        durationSeconds: durationSeconds,
+      },
     });
 
     const startTime = Date.now();
@@ -239,6 +246,107 @@ export async function generateVideoWithVeo3(
   } catch (error) {
     console.error("[Veo3] ❌ Video generation failed:", error);
     throw normalizeVeo3Error(error);
+  }
+}
+
+/**
+ * Build a concise image-to-video prompt for Runway Gen4 Turbo.
+ * Gen4 Turbo receives the reference image separately, so the prompt only needs
+ * to describe motion, character action, and shot style — not the visual content.
+ */
+export type ImageAngle = "eye_level" | "diagonal" | "close_up" | "top_down";
+
+export function buildGen4TurboPrompt(options: {
+  storyTopic?: string;
+  script?: string;
+  characterDescription?: string;
+  sceneLocation?: string;
+  emotionStyle?: string;
+  visualStyle?: string;
+  motionIntensity?: number;
+  contentTone?: string;
+  imageAngle?: ImageAngle;
+}): string {
+  const {
+    storyTopic,
+    characterDescription,
+    sceneLocation,
+    emotionStyle,
+    visualStyle,
+    contentTone,
+    imageAngle = "eye_level",
+  } = options;
+
+  // Cap character description: Runway has a hard prompt limit (~1000 chars).
+  // Long or Vietnamese descriptions bloat the prompt and push critical constraints off the end.
+  const isAscii = (s: string) => /^[\x20-\x7E]*$/.test(s);
+  const charDescRaw = characterDescription?.trim() ?? "";
+  const charDesc =
+    charDescRaw.length > 0 && charDescRaw.length <= 45 && isAscii(charDescRaw)
+      ? charDescRaw
+      : "a professional female sales advisor";
+
+  const productRef = storyTopic?.trim() || "the featured product";
+  // Keep setting brief to save chars
+  const setting = sceneLocation?.trim() ? `${sceneLocation}.` : "";
+  const styleShort = (visualStyle || "Cinematic") + " style, 4K.";
+
+  // Normalize expressionDesc — always produce ASCII English to avoid Vietnamese leaking in
+  const expressionDesc =
+    contentTone?.toLowerCase().includes("sang trọng") ||
+    contentTone?.toLowerCase().includes("luxury") ||
+    contentTone?.toLowerCase().includes("premium")
+      ? "Elegant presentation."
+      : contentTone?.toLowerCase().includes("vui") ||
+        contentTone?.toLowerCase().includes("fun") ||
+        contentTone?.toLowerCase().includes("cheerful")
+      ? "Upbeat, smiling."
+      : emotionStyle && isAscii(emotionStyle.trim()) && emotionStyle.trim().length > 0
+      ? emotionStyle.trim() + "."
+      : "Warm, welcoming smile.";
+
+  // Camera motion varies by angle
+  const cameraMotion = buildGen4CameraMotion(imageAngle);
+
+  // Character definition goes FIRST so Runway locks onto the correct protagonist before
+  // reading any camera motion — prevents it from using background workers or bystanders.
+  const characterLock =
+    `${charDesc} — Vietnamese or East Asian female sales presenter. Standing upright, facing directly into camera, warm professional smile. NOT a farm worker, NOT crouching, NOT a background bystander.`;
+
+  // Compact template — ~700 chars total to stay safely under Runway's limit
+  const parts = [
+    characterLock,
+    cameraMotion,
+    "She points at the fruits while speaking to camera — no picking up, touching, or moving fruits.",
+    "CRITICAL: Fruits from reference image stay whole, untouched, in exact original positions.",
+    "Camera motion only — she does not appear, fade in, or materialize.",
+    `Eye-level medium shot. Product: ${productRef}.`,
+    setting,
+    styleShort,
+    expressionDesc,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return parts;
+}
+
+function buildGen4CameraMotion(imageAngle: ImageAngle): string {
+  switch (imageAngle) {
+    case "diagonal":
+      return "Camera zooms out along a gentle diagonal from the fruit display in the reference image. She was already standing to the side of the display, just outside the initial frame.";
+
+    case "close_up":
+      return "Camera zooms out from the close-up of the fruit in the reference image to a natural eye-level composition. She was already standing beside the display, just outside the tight crop.";
+
+    case "top_down":
+      return "Camera tilts up from the overhead view of the fruit display to a natural eye-level angle. She was already standing upright behind the display, below the initial overhead field of view.";
+
+    case "eye_level":
+    default:
+      return "Camera smoothly pulls back from the fruit display in the reference image. She was already standing behind the display, just outside the initial frame.";
   }
 }
 
@@ -373,6 +481,8 @@ export function buildVideoPrompt(
     "- The hero fruit must stay clearly visible in every scene and should be the main subject of the shot.",
     "- Character presence is secondary: the presenter should stand beside the fruit, not dominate the frame.",
     "- Avoid switching to unrelated fruit baskets, orchard rows, or generic farm scenery if the uploaded image already defines the product.",
+    "- PHYSICAL STATE LOCK (critical): maintain the exact same physical preparation state of the fruit across ALL frames — if the fruit appears whole, it must stay whole in every subsequent frame; if it appears cut or halved, it must stay cut or halved. NEVER switch between whole and cut/halved states mid-video. This applies to every shot, every angle, and every close-up.",
+    "- Do NOT show the same fruit simultaneously in two different states (e.g., one whole and one halved) unless the script explicitly requires it as a deliberate comparison shot.",
   ];
 
   const normalizedTopic = mainProductTopic.toLowerCase();
@@ -459,11 +569,19 @@ export function buildVideoPrompt(
 
   const directionBlock = [
     "Create a professional fruit product video.",
+    "Fruit visual realism (critical, must follow):",
+    "- Render all fruit with macro-photography accuracy: authentic skin texture, natural color gradients, realistic surface imperfections — NO plastic sheen or CGI smoothing.",
+    "- Strawberry: achenes (seeds) are small RAISED flat golden or whitish bumps embedded ON the skin surface, NEVER holes, pores, or indentations. Skin between achenes is smooth red flesh.",
+    "- All fruit skin must show natural botanical detail: subtle pores, realistic ripeness gradient from stem to tip, natural blemishes where appropriate.",
+    "- Fruit flesh cross-sections (if shown) must have accurate internal structure: correct seed placement, realistic moisture/juice sheen, proper cell texture.",
+    "- Watermelon: deep red/pink flesh with distinct dark seeds or seedless translucent pockets; rind transition from white to green is gradual, not abrupt.",
+    "- Use natural depth of field for fruit close-ups to emphasize authentic texture details.",
     "Cultural direction (must follow):",
     "- Prioritize Vietnamese context, lifestyle, and consumer taste.",
     "- Visual cues should feel local to Vietnam and strictly align with the selected scene location.",
     "- Keep wardrobe, gestures, and pacing natural for Vietnamese audience; avoid overly Western styling.",
     "- Skin tones, lighting, props, and food presentation should feel authentic to Vietnam.",
+    "- Presenter/character must have Vietnamese or East Asian appearance (face, skin tone, hair). Do NOT generate characters with Western European, Middle Eastern, or South Asian appearance.",
     ...presenterLockHints,
     ...locationLockHints,
     ...backgroundFruitConsistencyHints,

@@ -76,7 +76,7 @@
     ],
     "win": {
       "target": ["nsis"],
-      "icon": "public/app-icon.png",
+      "icon": "public/app-icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {
