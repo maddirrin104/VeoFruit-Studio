@@ -340,17 +340,3 @@ npx prisma migrate reset   # ⚠️ Xóa toàn bộ dữ liệu và tạo lại 
 **Video không xuất được trên Desktop**
 - Kiểm tra `ffmpeg-static` đã được cài đúng cách (`npm install`).
 - Kiểm tra quyền ghi vào thư mục `public/generated-audio/`.
-
----
-
-## Giấy phép
-
-Dự án được phát triển phục vụ mục đích học thuật tại **Trường Đại học Công nghệ Thông tin — ĐHQG TP.HCM (UIT)**.
-
----
-
-<div align="center">
-
-Developed with ❤️ by **VeoFruit Studio Team** · UIT · 2026
-
-</div>
